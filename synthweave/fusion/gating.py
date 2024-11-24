@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import List
 
 class GFF(nn.Module):
@@ -13,37 +12,45 @@ class GFF(nn.Module):
     Source: https://www.mdpi.com/1424-8220/23/24/9845
     """
     
-    def __init__(self, input_dims: List[torch.Size], hidden_dim: int) -> None:
+    def __init__(self, input_dims: List[torch.Size], hidden_dim: int, dropout=True) -> None:
         """
         Initializes the GFF module.
         
         Args:
             input_dims (List[torch.Size]): List of input dimensions of the uni-modal models.
             hidden_dim (int): Hidden dimension of the fully connected
+            dropout (bool): Whether to apply dropout
         """
         super(GFF, self).__init__()
         
-        n_mods = len(input_dims)
+        if len(input_dims) != 2:
+            raise ValueError("GFF module requires exactly two input modalities.")
 
         # Fully connected layers for each modality to project to a common space
-        self.projection_layers = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
-                nn.Dropout(0.5) # prevent overfitting
-            ) for input_dim in input_dims
+        self.proj_layers = nn.ModuleList([
+            nn.Linear(input_dim, hidden_dim) 
+            for input_dim 
+            in input_dims
         ])
-
-        # Gate calculation layer
-        self.gate_layer = nn.Linear(hidden_dim * n_mods, n_mods)
+        
+        # Fully connected layer to project the concatenated features to a common space
+        self.gate_proj = nn.Linear(sum(input_dims), hidden_dim)
+        
+        # Dropout
+        if dropout:
+            self.dropout = nn.Dropout(0.5)
+        else:
+            self.dropout = nn.Identity()
+        
+        # Sigmoid
+        self.sigmoid = nn.Sigmoid()
+        
+        # Tanh
+        self.tanh = nn.Tanh()
         
     def forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
         """
         Forward pass for the GFF module.
-        
-        Steps:
-        - Project each modality into the common space.
-        - Compute gate values.
-        - Apply gating to each modality.
         
         Args:
             embeddings (List[torch.Tensor]): List of embeddings from each uni-modal model.
@@ -52,19 +59,38 @@ class GFF(nn.Module):
             torch.Tensor: Fused features
         """
         
+        # Concatenate the embeddings
+        concat_embeds = torch.cat(proj_embeds, dim=-1)
+        
         # Project each modality into the common space
-        projected_features = [
-            F.tanh(layer(emb)) 
-            for layer, emb 
-            in zip(self.projection_layers, embeddings)
+        proj_embeds = [
+            layer(embed)
+            for layer, embed 
+            in zip(self.proj_layers, embeddings)
         ]
-        projected_concat = torch.cat(projected_features, dim=-1)  # Concatenate along the feature dimension
         
-        # Compute gate values
-        gate_logits = self.gate_layer(projected_concat) 
-        gate_values = F.softmax(gate_logits, dim=-1)
+        # Apply dropout
+        proj_embeds = [self.dropout(embed) for embed in proj_embeds]
         
-        # Apply gating to each modality
-        fused_features = sum(gate_values[:, i:i+1] * feature for i, feature in enumerate(projected_features))
+        # Apply tanh activation
+        proj_embeds = [self.tanh(embed) for embed in proj_embeds]
         
-        return fused_features
+        # Project the concatenated features into the common space
+        gate_proj_embeds = self.gate_proj(concat_embeds)
+        
+        # Apply dropout
+        gate_proj_embeds = self.dropout(gate_proj_embeds)
+        
+        # Calculate the gate vector
+        gate = self.sigmoid(gate_proj_embeds)
+        
+        # Apply gating mechanism
+        gated_embeds = [
+            torch.mul(gate, proj_embeds[:, 0]),
+            torch.mul(1 - gate, proj_embeds[:, 1])
+        ]
+        
+        # Sum the gated embeddings
+        fusion_vector = torch.sum(gated_embeds)
+        
+        return fusion_vector

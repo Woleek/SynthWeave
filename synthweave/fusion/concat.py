@@ -23,20 +23,18 @@ class CFF(nn.Module):
         """
         super(CFF, self).__init__()
         
-        self.fc = nn.Sequential(
+        # Fully connected layer to process concatenated features
+        self.fc_drop = nn.Sequential(
             nn.Linear(sum(input_dims), hidden_dim),
-            nn.Dropout(0.5), # prevent overfitting
-            nn.ReLU()
+            nn.Dropout(0.7) # prevent overfitting
         )
+        
+        # ReLU activation
+        self.relu = nn.ReLU()
 
     def forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
         """
         Forward pass for the CFF module.
-        
-        Steps:
-        - Concatenates features from uni-modal models along the last dimension.
-        - Passes the concatenated features through a fully connected layer.
-        - Applies dropout and ReLU activation.
         
         Args:
             embeddings (List[torch.Tensor]): List of embeddings from each uni-modal model.
@@ -44,6 +42,14 @@ class CFF(nn.Module):
         Returns:
             torch.Tensor: Fused features
         """
-        concatenated = torch.cat(embeddings, dim=-1)
-        fused_features = self.fc(concatenated)
-        return fused_features
+        
+        # Concatenate embeddings
+        concat_embeds = torch.cat(embeddings, dim=-1)
+        
+        # Process concatenated features
+        fusion_vector = self.fc_drop(concat_embeds)
+        
+        # Apply ReLU activation
+        fusion_vector = self.relu(fusion_vector)
+        
+        return fusion_vector
