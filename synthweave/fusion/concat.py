@@ -20,10 +20,13 @@ class CFF(BaseFusion):
         """
         
         # Fully connected layer to process concatenated features
-        self.fc_drop = nn.Sequential(
-            nn.Linear(sum(self._input_dims), self._output_dim),
-            nn.Dropout(0.7) # prevent overfitting
-        )
+        self.fc_layer = nn.Linear(sum(self._input_dims), self._output_dim)
+        
+        # Dropout
+        if self._dropout:
+            self.dropout = nn.Dropout(0.5)
+        else:
+            self.dropout = nn.Identity()
         
         # ReLU activation
         self.relu = nn.ReLU()
@@ -37,7 +40,10 @@ class CFF(BaseFusion):
         concat_embeds = torch.cat(embeddings, dim=-1)
         
         # Process concatenated features
-        fusion_vector = self.fc_drop(concat_embeds)
+        fusion_vector = self.fc_layer(concat_embeds)
+        
+        # Apply dropout
+        fusion_vector = self.dropout(fusion_vector)
         
         # Apply ReLU activation
         fusion_vector = self.relu(fusion_vector)

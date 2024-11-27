@@ -13,6 +13,9 @@ def get_fusion(fusion_name: FusionType, output_dim: int, dropout: bool = True, i
     - AFF: Attention Feature Fusion
     - IAFF: Inter-Attention Feature Fusion
     - CAFF: Cross-Attention Feature Fusion
+    - MV: Majority Voting
+    - ASF: Average Score Fusion
+    - SF: Score Fusion
     """
     fusion_module = FUSION_MAP.get(fusion_name.upper(), None)
     if not fusion_module:
