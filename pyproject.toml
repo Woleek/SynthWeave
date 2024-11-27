@@ -10,7 +10,8 @@ description = "A library for plug-in modality fusion for integration of multimod
 requires-python = ">= 3.10, <= 3.12"
 
 dependencies = [
-    "torch ~= 2.5.1"
+    "torch ~= 2.5.1",
+    "numpy ~= 2.1.3"
 ]
 
 

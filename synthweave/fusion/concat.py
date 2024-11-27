@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 
 from typing import List
+from .base import BaseFusion
 
-class CFF(nn.Module):
+class CFF(BaseFusion):
     """
     Concatenation Feature Fusion (CFF) module.
     
@@ -13,34 +14,23 @@ class CFF(nn.Module):
     Source: https://www.mdpi.com/1424-8220/23/24/9845
     """
     
-    def __init__(self, input_dims: List[torch.Size], hidden_dim: int) -> None:
+    def _lazy_init(self) -> None:
         """
         Initializes the CFF module.
-        
-        Args:
-            input_dims (List[torch.Size]): List of input dimensions of the uni-modal models.
-            hidden_dim (int): Hidden dimension of the fully connected
         """
-        super(CFF, self).__init__()
         
         # Fully connected layer to process concatenated features
         self.fc_drop = nn.Sequential(
-            nn.Linear(sum(input_dims), hidden_dim),
+            nn.Linear(sum(self._input_dims), self._output_dim),
             nn.Dropout(0.7) # prevent overfitting
         )
         
         # ReLU activation
         self.relu = nn.ReLU()
 
-    def forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
+    def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
         """
         Forward pass for the CFF module.
-        
-        Args:
-            embeddings (List[torch.Tensor]): List of embeddings from each uni-modal model.
-        
-        Returns:
-            torch.Tensor: Fused features
         """
         
         # Concatenate embeddings
