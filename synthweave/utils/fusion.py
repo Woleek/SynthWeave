@@ -3,7 +3,7 @@ from ..fusion.base import BaseFusion
 
 from typing import List, Optional
 
-def get_fusion(fusion_name: FusionType, output_dim: int, dropout: bool = True, input_dims: Optional[List[int]] = None) -> BaseFusion:
+def get_fusion(fusion_name: FusionType, output_dim: int, dropout: bool = True, input_dims: Optional[List[int]] = None, **kwargs) -> BaseFusion:
     """
     Get fusion module by name.
     
@@ -16,9 +16,10 @@ def get_fusion(fusion_name: FusionType, output_dim: int, dropout: bool = True, i
     - MV: Majority Voting
     - ASF: Average Score Fusion
     - SF: Score Fusion
+    - MMD: Multi-Modal Joint-Decoder
     """
     fusion_module = FUSION_MAP.get(fusion_name.upper(), None)
     if not fusion_module:
         raise ValueError(f"Unknown fusion module: {fusion_name}")
     else:
-        return fusion_module(output_dim, dropout, input_dims)
+        return fusion_module(output_dim, dropout, input_dims, **kwargs)
