@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from ...utils.modules import LinearXavier
         
 class SelfAttention(nn.Module):
     """
@@ -7,9 +8,9 @@ class SelfAttention(nn.Module):
     """
     def __init__(self, modal_dim):
         super(SelfAttention, self).__init__()
-        self.Wq = nn.Linear(modal_dim, modal_dim)
-        self.Wk = nn.Linear(modal_dim, modal_dim)
-        self.Wv = nn.Linear(modal_dim, modal_dim)
+        self.Wq = LinearXavier(modal_dim, modal_dim)
+        self.Wk = LinearXavier(modal_dim, modal_dim)
+        self.Wv = LinearXavier(modal_dim, modal_dim)
         self.scale = 1 / (modal_dim ** 0.5)
         
         self.softmax = nn.Softmax(dim=-1)
@@ -27,8 +28,8 @@ class FeedForward(nn.Module):
     """
     def __init__(self, modal_dim, d_ff):
         super(FeedForward, self).__init__()
-        self.linear1 = nn.Linear(modal_dim, d_ff)
-        self.linear2 = nn.Linear(d_ff, modal_dim)
+        self.linear1 = LinearXavier(modal_dim, d_ff)
+        self.linear2 = LinearXavier(d_ff, modal_dim)
         
         self.relu = nn.ReLU()
 
@@ -41,9 +42,9 @@ class BiCroAttention(nn.Module):
     """
     def __init__(self, modal_dim):
         super(BiCroAttention, self).__init__()
-        self.Wq = nn.Linear(modal_dim, modal_dim)
-        self.Wk = nn.Linear(modal_dim, modal_dim)
-        self.Wv = nn.Linear(modal_dim, modal_dim)
+        self.Wq = LinearXavier(modal_dim, modal_dim)
+        self.Wk = LinearXavier(modal_dim, modal_dim)
+        self.Wv = LinearXavier(modal_dim, modal_dim)
         self.scale = 1 / (modal_dim ** 0.5)
         
         self.softmax = nn.Softmax(dim=-1)
@@ -92,27 +93,27 @@ class MMDBlock(nn.Module):
         self.ln2 = nn.LayerNorm(modality_dim)
         self.ln3 = nn.LayerNorm(modality_dim)
 
-    def forward(self, proj_inputs: list[torch.Tensor]) -> list[torch.Tensor]:
+    def forward(self, proj_embeds: list[torch.Tensor]) -> list[torch.Tensor]:
         """
         Forward pass for a single MMDBlock.
         """
         
         # BiCroAtt with residual connection
-        attended_inputs = [
-            self.ln1(proj_inputs[i] + self.bi_cro_att(proj_inputs[i], *[proj_inputs[j] for j in range(len(proj_inputs)) if j != i]))
-            for i in range(len(proj_inputs))
+        attended_embeds = [
+            self.ln1(proj_embeds[i] + self.bi_cro_att(proj_embeds[i], *[proj_embeds[j] for j in range(len(proj_embeds)) if j != i]))
+            for i in range(len(proj_embeds))
         ]
 
         # SelfAtt with residual connection
-        refined_inputs = [
-            self.ln2(attended_inputs[i] + self.self_att(attended_inputs[i]))
-            for i in range(len(attended_inputs))
+        refined_embeds = [
+            self.ln2(attended_embeds[i] + self.self_att(attended_embeds[i]))
+            for i in range(len(attended_embeds))
         ]
 
         # FeedForward with residual connection
-        refined_inputs = [
-            self.ln3(refined_inputs[i] + self.ff(refined_inputs[i]))
-            for i in range(len(refined_inputs))
+        refined_embeds = [
+            self.ln3(refined_embeds[i] + self.ff(refined_embeds[i]))
+            for i in range(len(refined_embeds))
         ]
 
-        return refined_inputs
+        return refined_embeds

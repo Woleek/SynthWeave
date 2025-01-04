@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from typing import List
 from .base import BaseFusion
+from ..utils.modules import LazyLinearXavier
 
 class GFF(BaseFusion):
     """
@@ -14,23 +15,35 @@ class GFF(BaseFusion):
     Source: https://www.mdpi.com/1424-8220/23/24/9845
     """
     
-    def _lazy_init(self) -> None:
-        """
+    def __init__(
+        self, 
+        output_dim: int,
+        n_modals: int,
+        dropout: bool = True,
+        unify_embeds: bool = True
+    ) -> None:
+        """        
         Initializes the GFF module.
         """
-        
-        if len(self._input_dims) != 2:
+        if n_modals != 2:
             raise ValueError("GFF module requires exactly two input modalities.")
+        
+        super(GFF, self).__init__(dropout, unify_embeds)
 
         # Fully connected layers for each modality to project to a common space
-        self.proj_layers = nn.ModuleList([
-            nn.Linear(input_dim, self._output_dim) 
-            for input_dim 
-            in self._input_dims
-        ])
+        if self._unify_embeds:
+            self.unify_layers = nn.ModuleList([
+                LazyLinearXavier(output_dim)
+                for _ in range(n_modals)
+            ])
+        else:
+            self.unify_layers = nn.ModuleList([
+                nn.Identity()
+                for _ in range(n_modals)
+            ])
         
         # Fully connected layer to project the concatenated features to a common space
-        self.gate_proj = nn.Linear(sum(self._input_dims), self._output_dim)
+        self.gate_proj = LazyLinearXavier(output_dim)
         
         # Dropout
         if self._dropout:
@@ -48,16 +61,15 @@ class GFF(BaseFusion):
         """
         Forward pass for the GFF module.
         """
+        # Unify representations into same dimension
+        proj_embeds = [
+            unify_layer(embed) 
+            for unify_layer, embed 
+            in zip(self.unify_layers, embeddings)
+        ]
         
         # Concatenate the embeddings
-        concat_embeds = torch.cat(embeddings, dim=-1)
-        
-        # Project each modality into the common space
-        proj_embeds = [
-            layer(embed)
-            for layer, embed 
-            in zip(self.proj_layers, embeddings)
-        ]
+        concat_embeds = torch.cat(proj_embeds, dim=-1)
         
         # Apply dropout
         proj_embeds = [self.dropout(embed) for embed in proj_embeds]

@@ -3,6 +3,7 @@ import torch.nn as nn
 from typing import List
 
 from .base import BaseFusion
+from ..utils.modules import LazyLinearXavier
 
 class AFF(BaseFusion):
     """
@@ -14,20 +15,34 @@ class AFF(BaseFusion):
     Source: https://www.mdpi.com/1424-8220/23/24/9845
     """
     
-    def _lazy_init(self) -> None:
+    def __init__(
+        self, 
+        output_dim: int,
+        n_modals: int,
+        dropout: bool = True,
+        unify_embeds: bool = True,
+    ) -> None:
         """
         Initializes the AFF module.
         """
+        super(AFF, self).__init__(dropout, unify_embeds)
         
-        # Linear layers to map uni-modal embeddings to a common hidden dimension
-        self.proj_layers = nn.ModuleList([
-            nn.Linear(input_dim, self._output_dim) 
-            for input_dim 
-            in self._input_dims
-        ])
+        self._output_dim = output_dim
+        
+        # Unify representations into same dimension
+        if self._unify_embeds:
+            self.unify_layers = nn.ModuleList([
+                LazyLinearXavier(output_dim)
+                for _ in range(n_modals)
+            ])
+        else:
+            self.unify_layers = nn.ModuleList([
+                nn.Identity()
+                for _ in range(n_modals)
+            ])
         
         # Attention layer for computing weights
-        self.att_layer = nn.Linear(sum(self._input_dims), self._output_dim)
+        self.att_layer = LazyLinearXavier(output_dim)
         
         # Dropout
         if self._dropout:
@@ -42,15 +57,15 @@ class AFF(BaseFusion):
         """
         Forward pass for the AFF module.
         """
-        # Concatenate embeddings
-        concat_embeds = torch.cat(embeddings, dim=-1)
-        
-        # Project uni-modal embeddings to a common hidden dimension
+        # Unify representations into same dimension
         proj_embeds = [
-            layer(embed) 
-            for layer, embed 
-            in zip(self.proj_layers, embeddings)
+            unify_layer(embed) 
+            for unify_layer, embed 
+            in zip(self.unify_layers, embeddings)
         ]
+        
+        # Concatenate embeddings
+        concat_embeds = torch.cat(proj_embeds, dim=-1)
         
         # Apply dropout
         proj_embeds = [self.dropout(embed) for embed in proj_embeds]
@@ -84,17 +99,34 @@ class IAFF(BaseFusion):
     Source: https://www.mdpi.com/1424-8220/23/24/9845
     """
     
-    def _lazy_init(self) -> None:
+    def __init__(
+        self, 
+        output_dim: int,
+        n_modals: int,
+        dropout: bool = True,
+        unify_embeds: bool = True,
+    ) -> None:
         """
         Initializes the IAFF module.
         """
+        super(IAFF, self).__init__(dropout, unify_embeds)
+        
+        self._output_dim = output_dim
+        
         # Fully connected layers to project each modality into a common space
-        self.proj_layers = nn.ModuleList([
-            nn.Linear(input_dim, self._output_dim) for input_dim in self._input_dims
-        ])
+        if self._unify_embeds:
+            self.unify_layers = nn.ModuleList([
+                LazyLinearXavier(output_dim)
+                for _ in range(n_modals)
+            ])
+        else:
+            self.unify_layers = nn.ModuleList([
+                nn.Identity()
+                for _ in range(n_modals)
+            ])
         
         # Attention layer for computing weights
-        self.att_layer = nn.Linear(sum(self._input_dims), self._output_dim)
+        self.att_layer = LazyLinearXavier(output_dim)
 
         # Dropout
         if self._dropout:
@@ -109,13 +141,15 @@ class IAFF(BaseFusion):
         """
         Forward pass for the IAFF module.
         """
-        # Concatenate embeddings
-        concat_embeds = torch.cat(embeddings, dim=-1)
-        
-        # Project each modality into the common space
+        # Unify representations into same dimension
         proj_embeds = [
-            layer(embed) for layer, embed in zip(self.proj_layers, embeddings)
+            unify_layer(embed) 
+            for unify_layer, embed 
+            in zip(self.unify_layers, embeddings)
         ]
+        
+        # Concatenate embeddings
+        concat_embeds = torch.cat(proj_embeds, dim=-1)
         
         # Compute attention weights
         att_logits = self.att_layer(concat_embeds)
@@ -149,7 +183,7 @@ class IAFF(BaseFusion):
         fusion_vector = torch.stack(att_embeds, dim=0).sum(dim=0)
         
         # Apply dropout
-        fusion_vector = self.dropout(fusion_vector)
+        # fusion_vector = self.dropout(fusion_vector)
 
         return fusion_vector
     
@@ -163,20 +197,32 @@ class CAFF(BaseFusion):
     Source: https://ieeexplore.ieee.org/document/9922810
     """
     
-    def _lazy_init(self) -> None:
+    def __init__(
+        self, 
+        output_dim: int,
+        n_modals: int,
+        dropout: bool = True,
+        unify_embeds: bool = True,
+    ) -> None:
         """
         Initializes the CAFF module.
         """
-        if len(self._input_dims) != 2:
-            raise ValueError("CAFF requires exactly two input modalities.")
+        super(CAFF, self).__init__(dropout, unify_embeds)
         
         # Fully connected layers to project each modality into a common space
-        self.proj_layers = nn.ModuleList([
-            nn.Linear(input_dim, self._output_dim // 2) for input_dim in self._input_dims
-        ])
+        if self._unify_embeds:
+            self.unify_layers = nn.ModuleList([
+                LazyLinearXavier(output_dim)
+                for _ in range(n_modals)
+            ])
+        else:
+            self.unify_layers = nn.ModuleList([
+                nn.Identity()
+                for _ in range(n_modals)
+            ])
         
         # Learnable cross-correlation weights metrix
-        self.cross_corr_matrix = nn.Parameter(torch.randn(self._output_dim // 2, self._output_dim // 2))
+        self.cross_corr_matrix = nn.Parameter(torch.randn(output_dim, output_dim))
         
         # Dropout
         if self._dropout:
@@ -191,9 +237,11 @@ class CAFF(BaseFusion):
         """
         Forward pass for the CAFF module.
         """
-        # Project uni-modal features into a common space
+        # Unify representations into same dimension
         proj_embeds = [
-            layer(embed) for layer, embed in zip(self.proj_layers, embeddings)
+            unify_layer(embed) 
+            for unify_layer, embed 
+            in zip(self.unify_layers, embeddings)
         ]
         
         # Apply dropout

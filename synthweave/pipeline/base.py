@@ -16,17 +16,38 @@ class BasePipeline(nn.Module):
             models: Mapping[str, nn.Module], 
             fusion: Union[BaseFusion, str], 
             head: Optional[nn.Module] = None,
-            processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None
+            processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
+            freeze_backbone: bool = True,
         ):
         super(BasePipeline, self).__init__()
 
         self.feature_extractors = nn.ModuleDict(models)
+        if freeze_backbone:
+            self._freeze_backbone()
         self.fusion = fusion
         self.head = head
         self.processors = processors
         
     def __call__(self, inputs: Dict[str, Any]) -> torch.Tensor:
         return self.forward(inputs)
+    
+    # def to(self, device: torch.device) -> 'BasePipeline':
+    #     """
+    #     Override the to method to move all models to the new device.
+    #     """
+    #     self.feature_extractors = self.feature_extractors.to(device)
+    #     self.fusion = self.fusion.to(device)
+    #     if self.head is not None:
+    #         self.head = self.head.to(device)
+    #     return super(BasePipeline, self).to(device)
+    
+    def _freeze_backbone(self) -> None:
+        """
+        Freeze the backbone models.
+        """
+        for model in self.feature_extractors.values():
+            for param in model.parameters():
+                param.requires_grad = False
     
     def preprocess(self, inputs: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """

@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from .. import logger
 from .base import BaseFusion
+from ..utils.modules import LazyLinearXavier
 
 class MV(BaseFusion):
     """
@@ -14,39 +15,61 @@ class MV(BaseFusion):
     Based on: "AVTENet: Audio-Visual Transformer-based Ensemble Network Exploiting Multiple Experts for Video Deepfake Detection"
     Source: https://arxiv.org/abs/2310.13103
     """
-    def __init__(self, output_dim: int = 1, dropout: bool = True, input_dims: Optional[List[int]] = None) -> None:
-        super(MV, self).__init__(output_dim, dropout, input_dims)
-        logger.warning("Note that this method outputs predictions instead of vectors and does not require additional classifier head.")
-        
-        if output_dim != 1:
-            logger.warning("This method is designed for binary classification. Setting `output_dim` to 1.")
-            self._output_dim = 1
-    
-    def _lazy_init(self) -> None:
+    def __init__(
+        self, 
+        output_dim: int,
+        n_modals: int,
+        dropout: bool = True,
+        unify_embeds: bool = True
+    ) -> None:
         """
         Initializes the MV module.
         """
+        super(MV, self).__init__(dropout, unify_embeds)
         
-        if len(self._input_dims) % 2 == 0:
+        logger.warning("Note that this method outputs predictions instead of vectors and does not require additional classifier head.")
+        
+        if len(n_modals) % 2 == 0:
             raise ValueError("Majority voting requires an odd number of modalities.")
+        
+        if output_dim != 1:
+            logger.warning("This method is designed for binary classification. Setting `output_dim` to 1.")
+            output_dim = 1
+            
+        # Unify representations into same dimension
+        if self._unify_embeds:
+            self.unify_layers = nn.ModuleList([
+                LazyLinearXavier(output_dim)
+                for _ in range(n_modals)
+            ])
+        else:
+            self.unify_layers = nn.ModuleList([
+                nn.Identity()
+                for _ in range(n_modals)
+            ])
         
         # Linear classifiers for each modality
         self.clf_layers = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(input_dim, self._output_dim),
+                LazyLinearXavier(output_dim),
                 nn.Sigmoid()
             )
-            for input_dim
-            in self._input_dims
+            for _ in range(n_modals)
         ])
         
     def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
         """
         Forward pass for the MV module.
         """
-        
+        # Unify representations into same dimension
+        proj_embeds = [
+            unify_layer(embed) 
+            for unify_layer, embed 
+            in zip(self.unify_layers, embeddings)
+        ]
+
         # Get probabilities from each modality
-        logits = [layer(embed) for layer, embed in zip(self.clf_layers, embeddings)]
+        logits = [layer(embed) for layer, embed in zip(self.clf_layers, proj_embeds)]
         
         # Binarize predictions
         preds = [torch.round(logit) for logit in logits]
@@ -66,27 +89,43 @@ class ASF(BaseFusion):
     Based on: "AVTENet: Audio-Visual Transformer-based Ensemble Network Exploiting Multiple Experts for Video Deepfake Detection"
     Source: https://arxiv.org/abs/2310.13103
     """
-    def __init__(self, output_dim: int = 1, dropout: bool = True, input_dims: Optional[List[int]] = None) -> None:
-        super(ASF, self).__init__(output_dim, dropout, input_dims)
+    def __init__(
+        self, 
+        output_dim: int,
+        n_modals: int,
+        dropout: bool = True,
+        unify_embeds: bool = True
+    ) -> None:
+        """
+        Initializes the ASF module.
+        """
+        super(ASF, self).__init__(dropout, unify_embeds)
+        
         logger.warning("Note that this method outputs predictions instead of vectors and does not require additional classifier head.")
         
         if output_dim != 1:
             logger.warning("This method is designed for binary classification. Setting `output_dim` to 1.")
-            self._output_dim = 1
-    
-    def _lazy_init(self) -> None:
-        """
-        Initializes the ASF module.
-        """
+            output_dim = 1
+            
+        # Unify representations into same dimension
+        if self._unify_embeds:
+            self.unify_layers = nn.ModuleList([
+                LazyLinearXavier(output_dim)
+                for _ in range(n_modals)
+            ])
+        else:
+            self.unify_layers = nn.ModuleList([
+                nn.Identity()
+                for _ in range(n_modals)
+            ])
         
         # Linear classifiers for each modality
         self.clf_layers = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(input_dim, self._output_dim),
+                LazyLinearXavier(output_dim),
                 nn.Sigmoid()
             )
-            for input_dim
-            in self._input_dims
+            for _ in range(n_modals)
         ])
         
         # Threshold for binarization
@@ -96,9 +135,15 @@ class ASF(BaseFusion):
         """
         Forward pass for the ASF module.
         """
+        # Unify representations into same dimension
+        proj_embeds = [
+            unify_layer(embed) 
+            for unify_layer, embed 
+            in zip(self.unify_layers, embeddings)
+        ]
         
         # Get probabilities from each modality
-        logits = [layer(embed) for layer, embed in zip(self.clf_layers, embeddings)]
+        logits = [layer(embed) for layer, embed in zip(self.clf_layers, proj_embeds)]
         
         # Average scores
         avg_scores = torch.stack(logits, dim=-1).mean(dim=-1)
@@ -117,28 +162,44 @@ class SF(BaseFusion):
     Based on: "AVTENet: Audio-Visual Transformer-based Ensemble Network Exploiting Multiple Experts for Video Deepfake Detection"
     Source: https://arxiv.org/abs/2310.13103
     """
-    def __init__(self, output_dim: int = 1, dropout: bool = True, input_dims: Optional[List[int]] = None) -> None:
-        super(SF, self).__init__(output_dim, dropout, input_dims)
+    def __init__(
+        self, 
+        output_dim: int,
+        n_modals: int,
+        dropout: bool = True,
+        unify_embeds: bool = True
+    ) -> None:
+        """
+        Initializes the SF module.
+        """
+        super(SF, self).__init__(dropout, unify_embeds)
+        
         logger.warning("Note that this method outputs predictions instead of vectors and does not require additional classifier head.")
         
         if output_dim != 1:
             logger.warning("This method is designed for binary classification. Setting `output_dim` to 1.")
-            self._output_dim = 1
-    
-    def _lazy_init(self) -> None:
-        """
-        Initializes the SF module.
-        """
+            output_dim = 1
+            
+        # Unify representations into same dimension
+        if self._unify_embeds:
+            self.unify_layers = nn.ModuleList([
+                LazyLinearXavier(output_dim)
+                for _ in range(n_modals)
+            ])
+        else:
+            self.unify_layers = nn.ModuleList([
+                nn.Identity()
+                for _ in range(n_modals)
+            ])
         
         # Linear classifiers for each modality
         self.clf_layers = nn.ModuleList([
-            nn.Linear(input_dim, self._output_dim)
-            for input_dim
-            in self._input_dims
+            LazyLinearXavier(output_dim)
+            for _ in range(n_modals)
         ])
         
         self.score_fusion_layer = nn.Sequential(
-            nn.Linear(len(self._input_dims), self._output_dim),
+            LazyLinearXavier(output_dim),
             nn.Sigmoid()
         )
         
@@ -146,9 +207,15 @@ class SF(BaseFusion):
         """
         Forward pass for the SF module.
         """
+        # Unify representations into same dimension
+        proj_embeds = [
+            unify_layer(embed) 
+            for unify_layer, embed 
+            in zip(self.unify_layers, embeddings)
+        ]
         
         # Get probabilities from each modality
-        logits = [layer(embed) for layer, embed in zip(self.clf_layers, embeddings)]
+        logits = [layer(embed) for layer, embed in zip(self.clf_layers, proj_embeds)]
         
         # Score fusion
         scores = torch.stack(logits, dim=-1)
