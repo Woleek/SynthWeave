@@ -72,12 +72,15 @@ class Trainer():
             for batch in dataloader:
                 self.optimizer.zero_grad()
                 
-                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()} 
+                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                labels = batch.pop('label', None)
+                
                 outputs = self.model(batch)
-                if 'label' in batch:
-                    loss = self.criterion(outputs, batch['label'])
+                if labels is not None:
+                    out = outputs['logits'] if 'logits' in outputs else outputs['embedding']
+                    loss = self.criterion(out, labels)
                 else:
-                    loss = self.criterion(outputs)
+                    loss = self.criterion(outputs['embedding'])
                 loss.backward()
                 self.optimizer.step()
                 epoch_loss += loss.item()
@@ -121,11 +124,13 @@ class Trainer():
         with torch.no_grad():
             for batch in dataloader:
                 batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()} 
+                labels = batch.pop('label', None)
                 outputs = self.model(batch)
-                if 'label' in batch:
-                    loss = self.criterion(outputs, batch['label'])
+                if labels is not None:
+                    out = outputs['logits'] if 'logits' in outputs else outputs['embedding']
+                    loss = self.criterion(out, labels)
                 else:
-                    loss = self.criterion(outputs)
+                    loss = self.criterion(outputs['embedding'])
                 total_loss += loss.item()
                 
         return total_loss / len(dataloader)
@@ -141,11 +146,13 @@ class Trainer():
         with torch.no_grad():
             for batch in dataloader:
                 batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()} 
+                labels = batch.pop('label', None)
                 outputs = self.model(batch)
-                predictions.append(outputs)
                 
-                if 'label' in batch:
-                    targets.append(batch['label'])
+                if labels is not None:
+                    targets.append(labels)
+
+                predictions.append(outputs['logits'] if 'logits' in outputs else outputs['embedding'])
                 
                 if self.progress_bar:
                     dataloader.update(1)

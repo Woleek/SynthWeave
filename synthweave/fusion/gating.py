@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from typing import List
+from typing import Dict, List, Optional
 from .base import BaseFusion
-from ..utils.modules import LazyLinearXavier
+from ..utils.modules import LazyLinearXavier, LinearXavier
 
 class GFF(BaseFusion):
     """
@@ -18,81 +18,66 @@ class GFF(BaseFusion):
     def __init__(
         self, 
         output_dim: int,
-        n_modals: int,
-        dropout: bool = True,
-        unify_embeds: bool = True
+        modality_keys: List[str],
+        
+        input_dims: Optional[Dict[str, int]] = None,
+        bias: bool = True,
+        dropout: float = 0.5,
+        
+        unify_embeds: bool = True,
+        hidden_proj_dim: Optional[int] = None,
+        out_proj_dim: Optional[int] = None,
+        normalize_proj: bool = True,
+        
+        **kwargs
     ) -> None:
         """        
         Initializes the GFF module.
         """
-        if n_modals != 2:
-            raise ValueError("GFF module requires exactly two input modalities.")
+        super(GFF, self).__init__(modality_keys, input_dims, bias, dropout, unify_embeds, hidden_proj_dim, out_proj_dim, normalize_proj)
         
-        super(GFF, self).__init__(dropout, unify_embeds)
+        self.output_dim = output_dim
 
-        # Fully connected layers for each modality to project to a common space
-        if self._unify_embeds:
-            self.unify_layers = nn.ModuleList([
-                LazyLinearXavier(output_dim)
-                for _ in range(n_modals)
-            ])
+        # Gate projection to learn modality importance
+        if self.proj_dim is None:
+            self.gate_proj = LazyLinearXavier(output_dim * len(modality_keys), bias)
         else:
-            self.unify_layers = nn.ModuleList([
-                nn.Identity()
-                for _ in range(n_modals)
-            ])
-        
-        # Fully connected layer to project the concatenated features to a common space
-        self.gate_proj = LazyLinearXavier(output_dim)
+            self.gate_proj = LinearXavier(self.proj_dim * len(modality_keys), output_dim * len(modality_keys), bias)
         
         # Dropout
-        if self._dropout:
-            self.dropout = nn.Dropout(0.5)
-        else:
-            self.dropout = nn.Identity()
+        self.dropout = nn.Dropout(dropout)
         
-        # Sigmoid
-        self.sigmoid = nn.Sigmoid()
+        # Softmax
+        self.softmax = nn.Softmax(dim=-2) # Act on the modality dimension
         
         # Tanh
         self.tanh = nn.Tanh()
         
-    def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
+        print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
+        
+    def _forward(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
         Forward pass for the GFF module.
         """
-        # Unify representations into same dimension
-        proj_embeds = [
-            unify_layer(embed) 
-            for unify_layer, embed 
-            in zip(self.unify_layers, embeddings)
-        ]
-        
         # Concatenate the embeddings
-        concat_embeds = torch.cat(proj_embeds, dim=-1)
-        
-        # Apply dropout
-        proj_embeds = [self.dropout(embed) for embed in proj_embeds]
+        concat_embeds = torch.cat(list(embeddings.values()), dim=-1) # (batch_size, n_modals * embed_dim)
         
         # Apply tanh activation
-        proj_embeds = [self.tanh(embed) for embed in proj_embeds]
+        embeddings = {key: self.tanh(embedding) for key, embedding in embeddings.items()}
         
-        # Project the concatenated features into the common space
-        gate_proj_embeds = self.gate_proj(concat_embeds)
+        # Compute gating vectors
+        gate_logits = self.gate_proj(concat_embeds) # (batch_size, n_modals * output_dim)
+        gate_logits = self.dropout(gate_logits)
         
-        # Apply dropout
-        gate_proj_embeds = self.dropout(gate_proj_embeds)
+        # Apply sigmoid activation to each gate
+        gate_logits = gate_logits.view(-1, len(self.modalities), self.output_dim)
+        gate = self.softmax(gate_logits) # (batch_size, n_modals, output_dim)
         
-        # Calculate the gate vector
-        gate = self.sigmoid(gate_proj_embeds)
-        
-        # Apply gating mechanism
-        gated_embeds = [
-            torch.mul(gate, proj_embeds[0]),
-            torch.mul(1 - gate, proj_embeds[1])
-        ]
+        # Apply gating mechanism to each modality
+        stack_embeds = torch.stack(list(embeddings.values()), dim=1) # (batch_size, n_modals, embed_dim)
+        gated_embeds = gate * stack_embeds # elment-wise multiplication
         
         # Sum the gated embeddings
-        fusion_vector = torch.stack(gated_embeds, dim=0).sum(dim=0)
+        fusion_vector = gated_embeds.sum(dim=1)  # (batch_size, output_dim)
         
         return fusion_vector

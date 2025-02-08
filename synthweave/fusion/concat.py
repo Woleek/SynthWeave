@@ -1,9 +1,10 @@
+from numpy import concat
 import torch
 import torch.nn as nn
 
-from typing import List
+from typing import Dict, List, Optional
 from .base import BaseFusion
-from ..utils.modules import LazyLinearXavier
+from ..utils.modules import LazyLinearXavier, LinearXavier
 
 class CFF(BaseFusion):
     """
@@ -17,54 +18,40 @@ class CFF(BaseFusion):
     def __init__(
         self, 
         output_dim: int,
-        n_modals: int,
-        dropout: bool = True,
-        unify_embeds: bool = True
+        modality_keys: List[str],
+        
+        input_dims: Optional[Dict[str, int]] = None,
+        bias: bool = True,
+        dropout: float = 0.5,
+        
+        unify_embeds: bool = True,
+        hidden_proj_dim: Optional[int] = None,
+        out_proj_dim: Optional[int] = None,
+        normalize_proj: bool = True,
+        
+        **kwargs
     ) -> None:
         """
         Initializes the CFF module.
         """
-        super(CFF, self).__init__(dropout, unify_embeds)
-        
-        # Unify representations into same dimension
-        if self._unify_embeds:
-            self.unify_layers = nn.ModuleList([
-                LazyLinearXavier(output_dim)
-                for _ in range(n_modals)
-            ])
-        else:
-            self.unify_layers = nn.ModuleList([
-                nn.Identity()
-                for _ in range(n_modals)
-            ])
+        super(CFF, self).__init__(modality_keys, input_dims, bias, dropout, unify_embeds, hidden_proj_dim, out_proj_dim, normalize_proj)
         
         # Fully connected layer to process concatenated features
-        self.fc_layer = LazyLinearXavier(output_dim)
-            
-        # Dropout
-        if self._dropout:
-            self.dropout = nn.Dropout(0.5)
+        if self.proj_dim is None:
+            self.fc_layer = LazyLinearXavier(output_dim, bias)
         else:
-            self.dropout = nn.Identity()
+            self.fc_layer = LinearXavier(self.proj_dim * len(modality_keys), output_dim, bias)
 
-    def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
+        print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
+        
+    def _forward(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
         Forward pass for the CFF module.
         """
-        # Unify representations into same dimension
-        proj_embeds = [
-            unify_layer(embed) 
-            for unify_layer, embed 
-            in zip(self.unify_layers, embeddings)
-        ]
-
         # Concatenate embeddings
-        concat_embeds = torch.cat(proj_embeds, dim=-1)
+        concat_embeds = torch.cat(list(embeddings.values()), dim=-1) # (batch_size, n_modals * embed_dim)
         
         # Process concatenated features
-        fusion_vector = self.fc_layer(concat_embeds)
-        
-        # Apply dropout
-        # fusion_vector = self.dropout(fusion_vector)
+        fusion_vector = self.fc_layer(concat_embeds) # (batch_size, output_dim)
         
         return fusion_vector

@@ -58,32 +58,40 @@ class BasePipeline(nn.Module):
                 inputs[modality] = processor(inputs[modality])
         return inputs
     
-    def extract_features(self, inputs: Dict[str, torch.Tensor]) -> List[torch.Tensor]:
+    def extract_features(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
         Extract features from each modality.
         """
-        embeddings = []
         for modality, model in self.feature_extractors.items():
-            embeddings.append(model(inputs[modality]))
-        return embeddings
+            inputs[modality] = model(inputs[modality])
+        return inputs
+    
+    def downstream_pass(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        if self.head is not None:
+            inputs['logits'] = self.head(inputs['embedding'])
+        return inputs
         
     def forward(self, inputs: Dict[str, Any]) -> torch.Tensor:
         """
         Run the pipeline.
-        """
+        """        
         # Preprocess inputs
         inputs = self.preprocess(inputs)
         
         # Extract embeddings from each modality
-        embeddings = self.extract_features(inputs)
+        feats = self.extract_features(inputs)
         
         # Fuse embeddings into one vector
-        fused_embedding = self.fusion(embeddings)
+        fused_embeddings = self.fusion({
+            modality: feats[modality] for modality in self.fusion.modalities
+        })
         
-        # Pass the fused embedding to the head
-        if self.head is not None:
-            output = self.head(fused_embedding)
-        else:
-            output = fused_embedding
+        # Prepare the output
+        output = {
+            'embedding': fused_embeddings
+        }
+        
+        # Pass the fused embeddings to the head
+        output = self.downstream_pass(output)
         
         return output
