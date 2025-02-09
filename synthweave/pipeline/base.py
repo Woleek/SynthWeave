@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from ..fusion.base import BaseFusion
-from typing import Any, Dict, Optional, Callable, Union, Mapping, List
+from typing import Any, Dict, Optional, Callable, Tuple, Union, Mapping, List
 
 class BasePipeline(nn.Module):
     """
@@ -55,7 +55,7 @@ class BasePipeline(nn.Module):
         """
         if self.processors is not None:
             for modality, processor in self.processors.items():
-                inputs[modality] = processor(inputs[modality])
+                inputs[modality] = processor(*inputs[modality])
         return inputs
     
     def extract_features(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -71,7 +71,7 @@ class BasePipeline(nn.Module):
             inputs['logits'] = self.head(inputs['embedding'])
         return inputs
         
-    def forward(self, inputs: Dict[str, Any]) -> torch.Tensor:
+    def forward(self, inputs: Dict[str, Tuple[Any]], output_feats: bool = False) -> torch.Tensor:
         """
         Run the pipeline.
         """        
@@ -88,8 +88,11 @@ class BasePipeline(nn.Module):
         
         # Prepare the output
         output = {
-            'embedding': fused_embeddings
+            'embedding': fused_embeddings,
         }
+        
+        if output_feats:
+            output.update(feats)
         
         # Pass the fused embeddings to the head
         output = self.downstream_pass(output)

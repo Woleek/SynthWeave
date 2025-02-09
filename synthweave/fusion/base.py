@@ -1,4 +1,3 @@
-from IPython import embed
 import torch
 import torch.nn as nn
 from ..utils.modules import LazyProjectionMLP, ProjectionMLP, L2NormalizationLayer
