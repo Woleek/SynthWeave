@@ -69,7 +69,7 @@ class ImagePreprocessor:
               
             # apply transform  
             frame = self.transform(frame)
-            
+            frame = frame / 255.0
             frames.append(frame)
             
         return torch.stack(frames, dim=0)
