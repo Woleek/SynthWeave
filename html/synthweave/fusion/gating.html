@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>synthweave.fusion.gating API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>synthweave.fusion.gating</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="synthweave.fusion.gating.GFF"><code class="flex name class">
+<span>class <span class="ident">GFF</span></span>
+<span>(</span><span>output_dim: int,<br>modality_keys: List[str],<br>input_dims: Dict[str, int] | None = None,<br>bias: bool = True,<br>dropout: float = 0.5,<br>unify_embeds: bool = True,<br>hidden_proj_dim: int | None = None,<br>out_proj_dim: int | None = None,<br>normalize_proj: bool = True,<br>**kwargs)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class GFF(BaseFusion):
+    &#34;&#34;&#34;Gating Feature Fusion (GFF) module.
+
+    Uses a gating mechanism to control the flow of information from multiple modalities.
+    Each modality contributes to the fused representation based on a learned gate vector.
+    The gated fusion approach enables selective integration of modalities based on their
+    importance or quality.
+
+    Based on: &#34;Audio-Visual Fusion Based on Interactive Attention for Person Verification&#34;
+    Source: https://www.mdpi.com/1424-8220/23/24/9845
+
+    Attributes:
+        gate_proj: Linear projection layer for computing gating vectors
+        dropout: Dropout layer for regularization
+        softmax: Softmax layer for normalizing gate values
+        tanh: Tanh activation function
+
+    Note:
+        Expects embeddings of shape (batch_size, embed_dim)
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        output_dim: int,
+        modality_keys: List[str],
+        input_dims: Optional[Dict[str, int]] = None,
+        bias: bool = True,
+        dropout: float = 0.5,
+        unify_embeds: bool = True,
+        hidden_proj_dim: Optional[int] = None,
+        out_proj_dim: Optional[int] = None,
+        normalize_proj: bool = True,
+        **kwargs,
+    ) -&gt; None:
+        &#34;&#34;&#34;Initialize the GFF module.
+
+        Args:
+            output_dim: Dimension of the output features
+            modality_keys: List of modality names to be fused
+            input_dims: Dictionary mapping modality names to their input dimensions
+            bias: Whether to include bias in linear layers
+            dropout: Dropout probability
+            unify_embeds: Whether to project all modalities to same dimension
+            hidden_proj_dim: Hidden dimension for projection layers
+            out_proj_dim: Output dimension for projection layers
+            normalize_proj: Whether to apply L2 normalization after projection
+            **kwargs: Additional arguments passed to parent class
+        &#34;&#34;&#34;
+        super(GFF, self).__init__(
+            modality_keys,
+            input_dims,
+            bias,
+            dropout,
+            unify_embeds,
+            hidden_proj_dim,
+            out_proj_dim,
+            normalize_proj,
+        )
+
+        self.output_dim = output_dim
+
+        # Gate projection to learn modality importance
+        if self.proj_dim is None:
+            self.gate_proj = LazyLinearXavier(output_dim * len(modality_keys), bias)
+        else:
+            self.gate_proj = LinearXavier(
+                self.proj_dim * len(modality_keys),
+                output_dim * len(modality_keys),
+                bias,
+            )
+
+        # Dropout
+        self.dropout = nn.Dropout(dropout)
+
+        # Softmax
+        self.softmax = nn.Softmax(dim=-2)  # Act on the modality dimension
+
+        # Tanh
+        self.tanh = nn.Tanh()
+
+        print(&#34;[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).&#34;)
+
+    def _forward(self, embeddings: Dict[str, torch.Tensor]) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Forward pass for the GFF module.
+
+        Args:
+            embeddings: Dictionary mapping modality names to their feature tensors
+                       Shape: (batch_size, embed_dim)
+
+        Returns:
+            torch.Tensor: Fused representation with shape (batch_size, output_dim)
+
+        Process:
+            1. Concatenates embeddings from all modalities
+            2. Applies tanh activation to individual embeddings
+            3. Computes gating vectors through projection and softmax
+            4. Applies gates to modality features
+            5. Sums the gated features to produce final fusion
+        &#34;&#34;&#34;
+        # Concatenate the embeddings
+        concat_embeds = torch.cat(
+            list(embeddings.values()), dim=-1
+        )  # (batch_size, n_modals * embed_dim)
+
+        # Apply tanh activation
+        embeddings = {
+            key: self.tanh(embedding) for key, embedding in embeddings.items()
+        }
+
+        # Compute gating vectors
+        gate_logits = self.gate_proj(
+            concat_embeds
+        )  # (batch_size, n_modals * output_dim)
+        gate_logits = self.dropout(gate_logits)
+
+        # Apply sigmoid activation to each gate
+        gate_logits = gate_logits.view(-1, len(self.modalities), self.output_dim)
+        gate = self.softmax(gate_logits)  # (batch_size, n_modals, output_dim)
+
+        # Apply gating mechanism to each modality
+        stack_embeds = torch.stack(
+            list(embeddings.values()), dim=1
+        )  # (batch_size, n_modals, embed_dim)
+        gated_embeds = gate * stack_embeds  # element-wise multiplication
+
+        # Sum the gated embeddings
+        fusion_vector = gated_embeds.sum(dim=1)  # (batch_size, output_dim)
+
+        return fusion_vector</code></pre>
+</details>
+<div class="desc"><p>Gating Feature Fusion (GFF) module.</p>
+<p>Uses a gating mechanism to control the flow of information from multiple modalities.
+Each modality contributes to the fused representation based on a learned gate vector.
+The gated fusion approach enables selective integration of modalities based on their
+importance or quality.</p>
+<p>Based on: "Audio-Visual Fusion Based on Interactive Attention for Person Verification"
+Source: <a href="https://www.mdpi.com/1424-8220/23/24/9845">https://www.mdpi.com/1424-8220/23/24/9845</a></p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>gate_proj</code></strong></dt>
+<dd>Linear projection layer for computing gating vectors</dd>
+<dt><strong><code>dropout</code></strong></dt>
+<dd>Dropout layer for regularization</dd>
+<dt><strong><code>softmax</code></strong></dt>
+<dd>Softmax layer for normalizing gate values</dd>
+<dt><strong><code>tanh</code></strong></dt>
+<dd>Tanh activation function</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>Expects embeddings of shape (batch_size, embed_dim)</p>
+<p>Initialize the GFF module.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>output_dim</code></strong></dt>
+<dd>Dimension of the output features</dd>
+<dt><strong><code>modality_keys</code></strong></dt>
+<dd>List of modality names to be fused</dd>
+<dt><strong><code>input_dims</code></strong></dt>
+<dd>Dictionary mapping modality names to their input dimensions</dd>
+<dt><strong><code>bias</code></strong></dt>
+<dd>Whether to include bias in linear layers</dd>
+<dt><strong><code>dropout</code></strong></dt>
+<dd>Dropout probability</dd>
+<dt><strong><code>unify_embeds</code></strong></dt>
+<dd>Whether to project all modalities to same dimension</dd>
+<dt><strong><code>hidden_proj_dim</code></strong></dt>
+<dd>Hidden dimension for projection layers</dd>
+<dt><strong><code>out_proj_dim</code></strong></dt>
+<dd>Output dimension for projection layers</dd>
+<dt><strong><code>normalize_proj</code></strong></dt>
+<dd>Whether to apply L2 normalization after projection</dd>
+<dt><strong><code>**kwargs</code></strong></dt>
+<dd>Additional arguments passed to parent class</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="synthweave.fusion.base.BaseFusion" href="base.html#synthweave.fusion.base.BaseFusion">BaseFusion</a></li>
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="synthweave.fusion.base.BaseFusion" href="base.html#synthweave.fusion.base.BaseFusion">BaseFusion</a></b></code>:
+<ul class="hlist">
+<li><code><a title="synthweave.fusion.base.BaseFusion.forward" href="base.html#synthweave.fusion.base.BaseFusion.forward">forward</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="synthweave.fusion" href="index.html">synthweave.fusion</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="synthweave.fusion.gating.GFF" href="#synthweave.fusion.gating.GFF">GFF</a></code></h4>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>

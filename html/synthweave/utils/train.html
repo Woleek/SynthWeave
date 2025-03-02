@@ -1,0 +1,1110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>synthweave.utils.train API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>synthweave.utils.train</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="synthweave.utils.train.garbage_collection_cuda"><code class="name flex">
+<span>def <span class="ident">garbage_collection_cuda</span></span>(<span>) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def garbage_collection_cuda() -&gt; None:
+    &#34;&#34;&#34;Perform garbage collection for CUDA memory.
+
+    Cleans up Python garbage collector and empties CUDA cache if available.
+    Handles potential out-of-memory errors during cleanup.
+    &#34;&#34;&#34;
+    gc.collect()
+    try:
+        # This is the last thing that should cause an OOM error, but seemingly it can.
+        torch.cuda.empty_cache()
+    except RuntimeError as exception:
+        if not is_oom_error(exception):
+            # Only handle OOM errors
+            raise</code></pre>
+</details>
+<div class="desc"><p>Perform garbage collection for CUDA memory.</p>
+<p>Cleans up Python garbage collector and empties CUDA cache if available.
+Handles potential out-of-memory errors during cleanup.</p></div>
+</dd>
+<dt id="synthweave.utils.train.is_cuda_out_of_memory"><code class="name flex">
+<span>def <span class="ident">is_cuda_out_of_memory</span></span>(<span>exception: BaseException) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_cuda_out_of_memory(exception: BaseException) -&gt; bool:
+    &#34;&#34;&#34;Check if an exception is specifically a CUDA out-of-memory error.
+
+    Args:
+        exception: Exception to check
+
+    Returns:
+        bool: True if the exception is a CUDA OOM error
+    &#34;&#34;&#34;
+    return (
+        isinstance(exception, RuntimeError)
+        and len(exception.args) == 1
+        and &#34;CUDA&#34; in exception.args[0]
+        and &#34;out of memory&#34; in exception.args[0]
+    )</code></pre>
+</details>
+<div class="desc"><p>Check if an exception is specifically a CUDA out-of-memory error.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>exception</code></strong></dt>
+<dd>Exception to check</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>bool</code></dt>
+<dd>True if the exception is a CUDA OOM error</dd>
+</dl></div>
+</dd>
+<dt id="synthweave.utils.train.is_cudnn_snafu"><code class="name flex">
+<span>def <span class="ident">is_cudnn_snafu</span></span>(<span>exception: BaseException) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_cudnn_snafu(exception: BaseException) -&gt; bool:
+    &#34;&#34;&#34;Check if an exception is a cuDNN support error.
+
+    Args:
+        exception: Exception to check
+
+    Returns:
+        bool: True if the exception is a cuDNN support error
+    &#34;&#34;&#34;
+    return (
+        isinstance(exception, RuntimeError)
+        and len(exception.args) == 1
+        and &#34;cuDNN error: CUDNN_STATUS_NOT_SUPPORTED.&#34; in exception.args[0]
+    )</code></pre>
+</details>
+<div class="desc"><p>Check if an exception is a cuDNN support error.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>exception</code></strong></dt>
+<dd>Exception to check</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>bool</code></dt>
+<dd>True if the exception is a cuDNN support error</dd>
+</dl></div>
+</dd>
+<dt id="synthweave.utils.train.is_oom_error"><code class="name flex">
+<span>def <span class="ident">is_oom_error</span></span>(<span>exception: BaseException) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_oom_error(exception: BaseException) -&gt; bool:
+    &#34;&#34;&#34;Check if an exception is related to out-of-memory (OOM) error.
+
+    Args:
+        exception: Exception to check
+
+    Returns:
+        bool: True if the exception is an OOM error
+    &#34;&#34;&#34;
+    return (
+        is_cuda_out_of_memory(exception)
+        or is_cudnn_snafu(exception)
+        or is_out_of_cpu_memory(exception)
+    )</code></pre>
+</details>
+<div class="desc"><p>Check if an exception is related to out-of-memory (OOM) error.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>exception</code></strong></dt>
+<dd>Exception to check</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>bool</code></dt>
+<dd>True if the exception is an OOM error</dd>
+</dl></div>
+</dd>
+<dt id="synthweave.utils.train.is_out_of_cpu_memory"><code class="name flex">
+<span>def <span class="ident">is_out_of_cpu_memory</span></span>(<span>exception: BaseException) ‑> bool</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_out_of_cpu_memory(exception: BaseException) -&gt; bool:
+    &#34;&#34;&#34;Check if an exception is a CPU out-of-memory error.
+
+    Args:
+        exception: Exception to check
+
+    Returns:
+        bool: True if the exception is a CPU OOM error
+    &#34;&#34;&#34;
+    return (
+        isinstance(exception, RuntimeError)
+        and len(exception.args) == 1
+        and &#34;DefaultCPUAllocator: can&#39;t allocate memory&#34; in exception.args[0]
+    )</code></pre>
+</details>
+<div class="desc"><p>Check if an exception is a CPU out-of-memory error.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>exception</code></strong></dt>
+<dd>Exception to check</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>bool</code></dt>
+<dd>True if the exception is a CPU OOM error</dd>
+</dl></div>
+</dd>
+<dt id="synthweave.utils.train.seed_everything"><code class="name flex">
+<span>def <span class="ident">seed_everything</span></span>(<span>seed: int = 42) ‑> None</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def seed_everything(seed: int = 42) -&gt; None:
+    &#34;&#34;&#34;Set random seeds for reproducibility across different libraries.
+
+    Sets random seeds for Python&#39;s random module, NumPy, PyTorch, and CUDA if available.
+    Also sets environment variables and CUDNN settings for complete reproducibility.
+
+    Args:
+        seed: Integer seed for random number generation. Defaults to 42.
+    &#34;&#34;&#34;
+    random.seed(seed)
+    os.environ[&#34;PYTHONHASHSEED&#34;] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False</code></pre>
+</details>
+<div class="desc"><p>Set random seeds for reproducibility across different libraries.</p>
+<p>Sets random seeds for Python's random module, NumPy, PyTorch, and CUDA if available.
+Also sets environment variables and CUDNN settings for complete reproducibility.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>seed</code></strong></dt>
+<dd>Integer seed for random number generation. Defaults to 42.</dd>
+</dl></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="synthweave.utils.train.BatchSizeFinder"><code class="flex name class">
+<span>class <span class="ident">BatchSizeFinder</span></span>
+<span>(</span><span>model: torch.nn.modules.module.Module,<br>mode: str = 'power',<br>init_val: int = 2,<br>max_trials: int = 25,<br>varying_batches=False,<br>device=device(type='cpu'))</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BatchSizeFinder:
+    &#34;&#34;&#34;Utility class to find the optimal batch size for training.
+
+    This class implements different strategies to find the maximum batch size that can
+    fit in memory. It supports power scaling mode where batch size is doubled until
+    out-of-memory error occurs.
+
+    Attributes:
+        mode: Strategy for finding batch size (&#39;power&#39;)
+        init_val: Initial batch size to start with
+        max_trials: Maximum number of trials to attempt
+        model: The model to test batch sizes with
+        device: Device to run tests on (CPU/GPU)
+        varying_batches: Whether the dataset has varying batch sizes
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        model: nn.Module,
+        mode: str = &#34;power&#34;,
+        init_val: int = 2,
+        max_trials: int = 25,
+        varying_batches=False,
+        device=torch.device(&#34;cpu&#34;),
+    ) -&gt; None:
+        &#34;&#34;&#34;Initialize the BatchSizeFinder.
+
+        Args:
+            model: Model to test batch sizes with
+            mode: Strategy for finding batch size (&#39;power&#39;)
+            init_val: Initial batch size to start with
+            max_trials: Maximum number of trials to attempt
+            varying_batches: Whether the dataset has varying batch sizes
+            device: Device to run tests on (CPU/GPU)
+        &#34;&#34;&#34;
+        self.mode = mode
+        self.init_val = init_val
+        self.max_trials = max_trials
+        self.model = model
+        self.device = device
+        self.varying_batches = varying_batches
+
+    def find_batch_size(self, dataloader: DataLoader) -&gt; int:
+        &#34;&#34;&#34;Find the optimal batch size for the given dataloader.
+
+        Args:
+            dataloader: DataLoader to test batch sizes with
+
+        Returns:
+            int: Optimal batch size found
+        &#34;&#34;&#34;
+        self.dataloader = dataloader
+        self.dataset_len = len(dataloader.dataset)
+        if self.mode == &#34;power&#34;:
+            new_size = self._run_power_scaling()
+
+        garbage_collection_cuda()
+
+        print(f&#34;Finished running finder with batch size: {new_size}&#34;)
+        return new_size
+
+    def _run_power_scaling(self) -&gt; int:
+        &#34;&#34;&#34;Implement power scaling strategy for batch size finding.
+
+        Doubles the batch size until an out-of-memory error occurs, then returns
+        the last successful batch size.
+
+        Returns:
+            int: Optimal batch size found using power scaling
+        &#34;&#34;&#34;
+        any_success = False
+        new_value, _ = self._adjust_batch_size(factor=1.0, value=self.init_val)
+
+        for _ in range(self.max_trials):
+            garbage_collection_cuda()
+
+            try:
+                new_value, changed = self._adjust_batch_size(
+                    factor=2.0, value=new_value
+                )
+
+                if not changed:
+                    break
+
+                self._try_run()
+
+                # Force the train dataloader to reset as the batch size has changed
+                self._reinitialize_dataloader(new_value)
+                any_success = True
+            except RuntimeError as exception:
+                if is_oom_error(exception):
+                    # If we fail in power mode, half the size and return
+                    garbage_collection_cuda()
+                    new_value, _ = self._adjust_batch_size(factor=0.5, value=new_value)
+                    # Force the train dataloader to reset as the batch size has changed
+                    self._reinitialize_dataloader(new_value)
+                    if any_success:
+                        break
+                else:
+                    raise  # some other error not memory related
+
+        return new_value
+
+    def _adjust_batch_size(self, factor: float, value: int):
+        &#34;&#34;&#34;Adjust batch size by the given factor.
+
+        Args:
+            factor: Factor to multiply current batch size by
+            value: Current batch size
+
+        Returns:
+            tuple: (new_value, changed) where changed indicates if the value was updated
+        &#34;&#34;&#34;
+        changed = False
+        new_value = int(value * factor)
+
+        if new_value &gt; self.dataset_len:
+            return value, changed
+        else:
+            changed = True
+            return new_value, changed
+
+    def _reinitialize_dataloader(self, new_value: int) -&gt; None:
+        &#34;&#34;&#34;Reinitialize the dataloader with a new batch size.
+
+        Args:
+            new_value: New batch size to use
+        &#34;&#34;&#34;
+        self.dataloader = DataLoader(
+            self.dataloader.dataset,
+            batch_size=new_value,
+            collate_fn=self.dataloader.collate_fn,
+        )
+
+    def _try_run(self):
+        &#34;&#34;&#34;Attempt to process a batch through the model.
+
+        Tests if the current batch size can be processed without running out of memory.
+        Handles both fixed and varying batch sizes.
+        &#34;&#34;&#34;
+        if self.varying_batches:  # needed for varying batch sizes
+            s = next(iter(self.dataloader))
+            # find modality with biggest size
+            modality = max(
+                s,
+                key=lambda x: (
+                    s[x].flatten().shape[0] if isinstance(s[x], torch.Tensor) else 0
+                ),
+            )
+
+            max_batch = 1
+            for batch in self.dataloader:
+                max_batch = max(max_batch, batch[modality].shape[0])
+
+            # create sample tensor for each modality with size of max_batch
+            big_batch = {
+                modality: torch.rand(
+                    (max_batch, *s[modality].shape[1:]), device=self.device
+                )
+                for modality in s
+                if isinstance(s[modality], torch.Tensor)
+            }
+
+            self.model(big_batch)
+
+        else:
+            for batch in self.dataloader:
+                batch = {
+                    k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                    for k, v in batch.items()
+                }
+                self.model(batch)
+                break</code></pre>
+</details>
+<div class="desc"><p>Utility class to find the optimal batch size for training.</p>
+<p>This class implements different strategies to find the maximum batch size that can
+fit in memory. It supports power scaling mode where batch size is doubled until
+out-of-memory error occurs.</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>mode</code></strong></dt>
+<dd>Strategy for finding batch size ('power')</dd>
+<dt><strong><code>init_val</code></strong></dt>
+<dd>Initial batch size to start with</dd>
+<dt><strong><code>max_trials</code></strong></dt>
+<dd>Maximum number of trials to attempt</dd>
+<dt><strong><code>model</code></strong></dt>
+<dd>The model to test batch sizes with</dd>
+<dt><strong><code>device</code></strong></dt>
+<dd>Device to run tests on (CPU/GPU)</dd>
+<dt><strong><code>varying_batches</code></strong></dt>
+<dd>Whether the dataset has varying batch sizes</dd>
+</dl>
+<p>Initialize the BatchSizeFinder.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>model</code></strong></dt>
+<dd>Model to test batch sizes with</dd>
+<dt><strong><code>mode</code></strong></dt>
+<dd>Strategy for finding batch size ('power')</dd>
+<dt><strong><code>init_val</code></strong></dt>
+<dd>Initial batch size to start with</dd>
+<dt><strong><code>max_trials</code></strong></dt>
+<dd>Maximum number of trials to attempt</dd>
+<dt><strong><code>varying_batches</code></strong></dt>
+<dd>Whether the dataset has varying batch sizes</dd>
+<dt><strong><code>device</code></strong></dt>
+<dd>Device to run tests on (CPU/GPU)</dd>
+</dl></div>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.utils.train.BatchSizeFinder.find_batch_size"><code class="name flex">
+<span>def <span class="ident">find_batch_size</span></span>(<span>self, dataloader: torch.utils.data.dataloader.DataLoader) ‑> int</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find_batch_size(self, dataloader: DataLoader) -&gt; int:
+    &#34;&#34;&#34;Find the optimal batch size for the given dataloader.
+
+    Args:
+        dataloader: DataLoader to test batch sizes with
+
+    Returns:
+        int: Optimal batch size found
+    &#34;&#34;&#34;
+    self.dataloader = dataloader
+    self.dataset_len = len(dataloader.dataset)
+    if self.mode == &#34;power&#34;:
+        new_size = self._run_power_scaling()
+
+    garbage_collection_cuda()
+
+    print(f&#34;Finished running finder with batch size: {new_size}&#34;)
+    return new_size</code></pre>
+</details>
+<div class="desc"><p>Find the optimal batch size for the given dataloader.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>dataloader</code></strong></dt>
+<dd>DataLoader to test batch sizes with</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>int</code></dt>
+<dd>Optimal batch size found</dd>
+</dl></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.utils.train.Trainer"><code class="flex name class">
+<span>class <span class="ident">Trainer</span></span>
+<span>(</span><span>model: torch.nn.modules.module.Module,<br>optimizer: torch.optim.optimizer.Optimizer,<br>criterion: torch.nn.modules.module.Module,<br>device: torch.device = device(type='cpu'),<br>scheduler: torch.optim.lr_scheduler.LRScheduler = None,<br>progress_bar: bool = True,<br>save_path: str = None,<br>load_best_model_at_the_end: bool = True,<br>early_stopping_patience: int = None)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Trainer:
+    &#34;&#34;&#34;A PyTorch trainer class for model training, evaluation, and prediction.
+
+    This class handles the training loop, evaluation, and prediction for PyTorch models.
+    It supports features like early stopping, learning rate scheduling, model checkpointing,
+    and progress bars.
+
+    Attributes:
+        model: The PyTorch model to train
+        optimizer: The optimizer for training
+        criterion: The loss function
+        device: The device to run training on (CPU/GPU)
+        scheduler: Optional learning rate scheduler
+        progress_bar: Whether to show progress bars during training
+        save_path: Path to save model checkpoints
+        load_best: Whether to load the best model after training
+        early_stopping_patience: Number of epochs to wait before early stopping
+        best_loss: Best validation loss achieved
+        early_stop_counter: Counter for early stopping
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        criterion: nn.Module,
+        device: torch.device = torch.device(&#34;cpu&#34;),
+        scheduler: torch.optim.lr_scheduler.LRScheduler = None,
+        progress_bar: bool = True,
+        save_path: str = None,
+        load_best_model_at_the_end: bool = True,
+        early_stopping_patience: int = None,
+    ) -&gt; None:
+        &#34;&#34;&#34;Initialize the Trainer.
+
+        Args:
+            model: PyTorch model to train
+            optimizer: Optimizer for training
+            criterion: Loss function
+            device: Device to run training on (CPU/GPU)
+            scheduler: Optional learning rate scheduler
+            progress_bar: Whether to show progress bars
+            save_path: Path to save model checkpoints
+            load_best_model_at_the_end: Whether to load best model after training
+            early_stopping_patience: Number of epochs to wait before early stopping
+        &#34;&#34;&#34;
+        self.model = model
+        self.optimizer = optimizer
+        self.criterion = criterion
+        self.device = device
+        self.model.to(self.device)
+        self.scheduler = scheduler
+        self.progress_bar = progress_bar
+        self.save_path = save_path
+        self.load_best = load_best_model_at_the_end
+        self.early_stopping_patience = early_stopping_patience
+        self.best_loss = float(&#34;inf&#34;)
+        self.early_stop_counter = 0
+
+    def train(
+        self, dataloader: DataLoader, epochs: int, eval_dataloader: DataLoader = None
+    ) -&gt; float:
+        &#34;&#34;&#34;Train the model for the specified number of epochs.
+
+        Performs training loop with optional validation, early stopping, and learning rate scheduling.
+
+        Args:
+            dataloader: DataLoader for training data
+            epochs: Number of epochs to train
+            eval_dataloader: Optional DataLoader for validation data
+
+        Returns:
+            float: Final training loss
+
+        Note:
+            If eval_dataloader is provided, the best model will be saved based on validation loss.
+            Early stopping will also be performed if configured.
+        &#34;&#34;&#34;
+        current_lr = self.optimizer.param_groups[0][&#34;lr&#34;]
+
+        if self.progress_bar:
+            iterator = tqdm(range(epochs), desc=&#34;Training Progress&#34;)
+        else:
+            iterator = range(epochs)
+
+        for epoch in iterator:
+            self.model.train()
+            epoch_loss = 0.0
+
+            if self.progress_bar:
+                iterator.set_description(f&#34;Training Progress [{epoch + 1}/{epochs}]&#34;)
+
+            for batch in dataloader:
+                self.optimizer.zero_grad()
+
+                batch = {
+                    k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                    for k, v in batch.items()
+                }
+                labels = batch.pop(&#34;label&#34;, None)
+
+                outputs = self.model(batch)
+                if labels is not None:
+                    out = (
+                        outputs[&#34;logits&#34;]
+                        if &#34;logits&#34; in outputs
+                        else outputs[&#34;embedding&#34;]
+                    )
+                    loss = self.criterion(out, labels)
+                else:
+                    loss = self.criterion(outputs[&#34;embedding&#34;])
+                loss.backward()
+                self.optimizer.step()
+                epoch_loss += loss.item()
+
+            if self.progress_bar:
+                iterator.set_postfix(
+                    epoch=epoch + 1, lr=current_lr, loss=epoch_loss / len(dataloader)
+                )
+                iterator.update(1)
+
+            if eval_dataloader:
+                eval_loss = self.evaluate(eval_dataloader)
+
+                if self.progress_bar:
+                    iterator.set_postfix(
+                        epoch=epoch + 1,
+                        lr=current_lr,
+                        loss=epoch_loss / len(dataloader),
+                        val_loss=eval_loss,
+                    )
+
+                if eval_loss &lt; self.best_loss:
+                    self.best_loss = eval_loss
+                    self.early_stop_counter = 0
+                    if self.save_path:
+                        torch.save(self.model.state_dict(), self.save_path)
+                else:
+                    self.early_stop_counter += 1
+
+            if (
+                self.early_stopping_patience
+                and self.early_stop_counter &gt;= self.early_stopping_patience
+            ):
+                print(
+                    f&#34;Early stopping triggered. Best validation loss: {self.best_loss:.4f}&#34;
+                )
+                break
+
+            if self.scheduler:
+                if (
+                    isinstance(
+                        self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                    )
+                    and eval_dataloader
+                ):
+                    self.scheduler.step(eval_loss)
+                else:
+                    self.scheduler.step()
+                current_lr = self.optimizer.param_groups[0][&#34;lr&#34;]
+
+        if self.load_best and self.save_path:
+            self.model.load_state_dict(torch.load(self.save_path, weights_only=True))
+
+    def evaluate(self, dataloader: DataLoader) -&gt; float:
+        &#34;&#34;&#34;Evaluate the model on the provided data.
+
+        Args:
+            dataloader: DataLoader for evaluation data
+
+        Returns:
+            float: Average loss on the evaluation dataset
+        &#34;&#34;&#34;
+        self.model.eval()
+        total_loss = 0.0
+
+        with torch.no_grad():
+            for batch in dataloader:
+                batch = {
+                    k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                    for k, v in batch.items()
+                }
+                labels = batch.pop(&#34;label&#34;, None)
+                outputs = self.model(batch)
+                if labels is not None:
+                    out = (
+                        outputs[&#34;logits&#34;]
+                        if &#34;logits&#34; in outputs
+                        else outputs[&#34;embedding&#34;]
+                    )
+                    loss = self.criterion(out, labels)
+                else:
+                    loss = self.criterion(outputs[&#34;embedding&#34;])
+                total_loss += loss.item()
+
+        return total_loss / len(dataloader)
+
+    def predict(self, dataloader: DataLoader) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Generate predictions using the trained model.
+
+        Args:
+            dataloader: DataLoader for prediction data
+
+        Returns:
+            torch.Tensor or tuple: Model predictions. If labels are present in the data,
+                returns a tuple of (predictions, targets)
+        &#34;&#34;&#34;
+        self.model.eval()
+        predictions = []
+        targets = []
+
+        if self.progress_bar:
+            dataloader = tqdm(dataloader, desc=&#34;Prediction Progress&#34;, leave=True)
+
+        with torch.no_grad():
+            for batch in dataloader:
+                batch = {
+                    k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                    for k, v in batch.items()
+                }
+                labels = batch.pop(&#34;label&#34;, None)
+                outputs = self.model(batch)
+
+                if labels is not None:
+                    targets.append(labels)
+
+                predictions.append(
+                    outputs[&#34;logits&#34;] if &#34;logits&#34; in outputs else outputs[&#34;embedding&#34;]
+                )
+
+                if self.progress_bar:
+                    dataloader.update(1)
+
+        if targets:
+            return torch.cat(predictions), np.concatenate(targets, axis=0)
+        return torch.cat(predictions)</code></pre>
+</details>
+<div class="desc"><p>A PyTorch trainer class for model training, evaluation, and prediction.</p>
+<p>This class handles the training loop, evaluation, and prediction for PyTorch models.
+It supports features like early stopping, learning rate scheduling, model checkpointing,
+and progress bars.</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>model</code></strong></dt>
+<dd>The PyTorch model to train</dd>
+<dt><strong><code>optimizer</code></strong></dt>
+<dd>The optimizer for training</dd>
+<dt><strong><code>criterion</code></strong></dt>
+<dd>The loss function</dd>
+<dt><strong><code>device</code></strong></dt>
+<dd>The device to run training on (CPU/GPU)</dd>
+<dt><strong><code>scheduler</code></strong></dt>
+<dd>Optional learning rate scheduler</dd>
+<dt><strong><code>progress_bar</code></strong></dt>
+<dd>Whether to show progress bars during training</dd>
+<dt><strong><code>save_path</code></strong></dt>
+<dd>Path to save model checkpoints</dd>
+<dt><strong><code>load_best</code></strong></dt>
+<dd>Whether to load the best model after training</dd>
+<dt><strong><code>early_stopping_patience</code></strong></dt>
+<dd>Number of epochs to wait before early stopping</dd>
+<dt><strong><code>best_loss</code></strong></dt>
+<dd>Best validation loss achieved</dd>
+<dt><strong><code>early_stop_counter</code></strong></dt>
+<dd>Counter for early stopping</dd>
+</dl>
+<p>Initialize the Trainer.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>model</code></strong></dt>
+<dd>PyTorch model to train</dd>
+<dt><strong><code>optimizer</code></strong></dt>
+<dd>Optimizer for training</dd>
+<dt><strong><code>criterion</code></strong></dt>
+<dd>Loss function</dd>
+<dt><strong><code>device</code></strong></dt>
+<dd>Device to run training on (CPU/GPU)</dd>
+<dt><strong><code>scheduler</code></strong></dt>
+<dd>Optional learning rate scheduler</dd>
+<dt><strong><code>progress_bar</code></strong></dt>
+<dd>Whether to show progress bars</dd>
+<dt><strong><code>save_path</code></strong></dt>
+<dd>Path to save model checkpoints</dd>
+<dt><strong><code>load_best_model_at_the_end</code></strong></dt>
+<dd>Whether to load best model after training</dd>
+<dt><strong><code>early_stopping_patience</code></strong></dt>
+<dd>Number of epochs to wait before early stopping</dd>
+</dl></div>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.utils.train.Trainer.evaluate"><code class="name flex">
+<span>def <span class="ident">evaluate</span></span>(<span>self, dataloader: torch.utils.data.dataloader.DataLoader) ‑> float</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def evaluate(self, dataloader: DataLoader) -&gt; float:
+    &#34;&#34;&#34;Evaluate the model on the provided data.
+
+    Args:
+        dataloader: DataLoader for evaluation data
+
+    Returns:
+        float: Average loss on the evaluation dataset
+    &#34;&#34;&#34;
+    self.model.eval()
+    total_loss = 0.0
+
+    with torch.no_grad():
+        for batch in dataloader:
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items()
+            }
+            labels = batch.pop(&#34;label&#34;, None)
+            outputs = self.model(batch)
+            if labels is not None:
+                out = (
+                    outputs[&#34;logits&#34;]
+                    if &#34;logits&#34; in outputs
+                    else outputs[&#34;embedding&#34;]
+                )
+                loss = self.criterion(out, labels)
+            else:
+                loss = self.criterion(outputs[&#34;embedding&#34;])
+            total_loss += loss.item()
+
+    return total_loss / len(dataloader)</code></pre>
+</details>
+<div class="desc"><p>Evaluate the model on the provided data.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>dataloader</code></strong></dt>
+<dd>DataLoader for evaluation data</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>float</code></dt>
+<dd>Average loss on the evaluation dataset</dd>
+</dl></div>
+</dd>
+<dt id="synthweave.utils.train.Trainer.predict"><code class="name flex">
+<span>def <span class="ident">predict</span></span>(<span>self, dataloader: torch.utils.data.dataloader.DataLoader) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def predict(self, dataloader: DataLoader) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Generate predictions using the trained model.
+
+    Args:
+        dataloader: DataLoader for prediction data
+
+    Returns:
+        torch.Tensor or tuple: Model predictions. If labels are present in the data,
+            returns a tuple of (predictions, targets)
+    &#34;&#34;&#34;
+    self.model.eval()
+    predictions = []
+    targets = []
+
+    if self.progress_bar:
+        dataloader = tqdm(dataloader, desc=&#34;Prediction Progress&#34;, leave=True)
+
+    with torch.no_grad():
+        for batch in dataloader:
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items()
+            }
+            labels = batch.pop(&#34;label&#34;, None)
+            outputs = self.model(batch)
+
+            if labels is not None:
+                targets.append(labels)
+
+            predictions.append(
+                outputs[&#34;logits&#34;] if &#34;logits&#34; in outputs else outputs[&#34;embedding&#34;]
+            )
+
+            if self.progress_bar:
+                dataloader.update(1)
+
+    if targets:
+        return torch.cat(predictions), np.concatenate(targets, axis=0)
+    return torch.cat(predictions)</code></pre>
+</details>
+<div class="desc"><p>Generate predictions using the trained model.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>dataloader</code></strong></dt>
+<dd>DataLoader for prediction data</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code> or <code>tuple</code></dt>
+<dd>Model predictions. If labels are present in the data,
+returns a tuple of (predictions, targets)</dd>
+</dl></div>
+</dd>
+<dt id="synthweave.utils.train.Trainer.train"><code class="name flex">
+<span>def <span class="ident">train</span></span>(<span>self,<br>dataloader: torch.utils.data.dataloader.DataLoader,<br>epochs: int,<br>eval_dataloader: torch.utils.data.dataloader.DataLoader = None) ‑> float</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def train(
+    self, dataloader: DataLoader, epochs: int, eval_dataloader: DataLoader = None
+) -&gt; float:
+    &#34;&#34;&#34;Train the model for the specified number of epochs.
+
+    Performs training loop with optional validation, early stopping, and learning rate scheduling.
+
+    Args:
+        dataloader: DataLoader for training data
+        epochs: Number of epochs to train
+        eval_dataloader: Optional DataLoader for validation data
+
+    Returns:
+        float: Final training loss
+
+    Note:
+        If eval_dataloader is provided, the best model will be saved based on validation loss.
+        Early stopping will also be performed if configured.
+    &#34;&#34;&#34;
+    current_lr = self.optimizer.param_groups[0][&#34;lr&#34;]
+
+    if self.progress_bar:
+        iterator = tqdm(range(epochs), desc=&#34;Training Progress&#34;)
+    else:
+        iterator = range(epochs)
+
+    for epoch in iterator:
+        self.model.train()
+        epoch_loss = 0.0
+
+        if self.progress_bar:
+            iterator.set_description(f&#34;Training Progress [{epoch + 1}/{epochs}]&#34;)
+
+        for batch in dataloader:
+            self.optimizer.zero_grad()
+
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items()
+            }
+            labels = batch.pop(&#34;label&#34;, None)
+
+            outputs = self.model(batch)
+            if labels is not None:
+                out = (
+                    outputs[&#34;logits&#34;]
+                    if &#34;logits&#34; in outputs
+                    else outputs[&#34;embedding&#34;]
+                )
+                loss = self.criterion(out, labels)
+            else:
+                loss = self.criterion(outputs[&#34;embedding&#34;])
+            loss.backward()
+            self.optimizer.step()
+            epoch_loss += loss.item()
+
+        if self.progress_bar:
+            iterator.set_postfix(
+                epoch=epoch + 1, lr=current_lr, loss=epoch_loss / len(dataloader)
+            )
+            iterator.update(1)
+
+        if eval_dataloader:
+            eval_loss = self.evaluate(eval_dataloader)
+
+            if self.progress_bar:
+                iterator.set_postfix(
+                    epoch=epoch + 1,
+                    lr=current_lr,
+                    loss=epoch_loss / len(dataloader),
+                    val_loss=eval_loss,
+                )
+
+            if eval_loss &lt; self.best_loss:
+                self.best_loss = eval_loss
+                self.early_stop_counter = 0
+                if self.save_path:
+                    torch.save(self.model.state_dict(), self.save_path)
+            else:
+                self.early_stop_counter += 1
+
+        if (
+            self.early_stopping_patience
+            and self.early_stop_counter &gt;= self.early_stopping_patience
+        ):
+            print(
+                f&#34;Early stopping triggered. Best validation loss: {self.best_loss:.4f}&#34;
+            )
+            break
+
+        if self.scheduler:
+            if (
+                isinstance(
+                    self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+                )
+                and eval_dataloader
+            ):
+                self.scheduler.step(eval_loss)
+            else:
+                self.scheduler.step()
+            current_lr = self.optimizer.param_groups[0][&#34;lr&#34;]
+
+    if self.load_best and self.save_path:
+        self.model.load_state_dict(torch.load(self.save_path, weights_only=True))</code></pre>
+</details>
+<div class="desc"><p>Train the model for the specified number of epochs.</p>
+<p>Performs training loop with optional validation, early stopping, and learning rate scheduling.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>dataloader</code></strong></dt>
+<dd>DataLoader for training data</dd>
+<dt><strong><code>epochs</code></strong></dt>
+<dd>Number of epochs to train</dd>
+<dt><strong><code>eval_dataloader</code></strong></dt>
+<dd>Optional DataLoader for validation data</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>float</code></dt>
+<dd>Final training loss</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>If eval_dataloader is provided, the best model will be saved based on validation loss.
+Early stopping will also be performed if configured.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="synthweave.utils" href="index.html">synthweave.utils</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="synthweave.utils.train.garbage_collection_cuda" href="#synthweave.utils.train.garbage_collection_cuda">garbage_collection_cuda</a></code></li>
+<li><code><a title="synthweave.utils.train.is_cuda_out_of_memory" href="#synthweave.utils.train.is_cuda_out_of_memory">is_cuda_out_of_memory</a></code></li>
+<li><code><a title="synthweave.utils.train.is_cudnn_snafu" href="#synthweave.utils.train.is_cudnn_snafu">is_cudnn_snafu</a></code></li>
+<li><code><a title="synthweave.utils.train.is_oom_error" href="#synthweave.utils.train.is_oom_error">is_oom_error</a></code></li>
+<li><code><a title="synthweave.utils.train.is_out_of_cpu_memory" href="#synthweave.utils.train.is_out_of_cpu_memory">is_out_of_cpu_memory</a></code></li>
+<li><code><a title="synthweave.utils.train.seed_everything" href="#synthweave.utils.train.seed_everything">seed_everything</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="synthweave.utils.train.BatchSizeFinder" href="#synthweave.utils.train.BatchSizeFinder">BatchSizeFinder</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.utils.train.BatchSizeFinder.find_batch_size" href="#synthweave.utils.train.BatchSizeFinder.find_batch_size">find_batch_size</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.utils.train.Trainer" href="#synthweave.utils.train.Trainer">Trainer</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.utils.train.Trainer.evaluate" href="#synthweave.utils.train.Trainer.evaluate">evaluate</a></code></li>
+<li><code><a title="synthweave.utils.train.Trainer.predict" href="#synthweave.utils.train.Trainer.predict">predict</a></code></li>
+<li><code><a title="synthweave.utils.train.Trainer.train" href="#synthweave.utils.train.Trainer.train">train</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>

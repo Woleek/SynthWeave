@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>synthweave.pipeline.base API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>synthweave.pipeline.base</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="synthweave.pipeline.base.BasePipeline"><code class="flex name class">
+<span>class <span class="ident">BasePipeline</span></span>
+<span>(</span><span>models: Mapping[str, torch.nn.modules.module.Module],<br>fusion: <a title="synthweave.fusion.base.BaseFusion" href="../fusion/base.html#synthweave.fusion.base.BaseFusion">BaseFusion</a> | str,<br>head: torch.nn.modules.module.Module | None = None,<br>processors: Mapping[str, Callable[..., torch.Tensor]] | None = None,<br>freeze_backbone: bool = True)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BasePipeline(nn.Module):
+    &#34;&#34;&#34;Base class for multimodal processing pipelines.
+
+    Implements a complete pipeline workflow in the following sequence:
+    1. Uni-modal inputs
+    2. Preprocessing
+    3. Feature Extraction
+    4. Fusion
+    5. Head (task specific)
+    6. Output
+
+    Attributes:
+        feature_extractors (nn.ModuleDict): Feature extraction models for each modality
+        fusion (BaseFusion): Fusion module for combining modality features
+        head (nn.Module): Task-specific head network
+        processors (Mapping[str, Callable]): Preprocessing functions for each modality
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        models: Mapping[str, nn.Module],
+        fusion: Union[BaseFusion, str],
+        head: Optional[nn.Module] = None,
+        processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
+        freeze_backbone: bool = True,
+    ):
+        &#34;&#34;&#34;Initialize the pipeline.
+
+        Args:
+            models: Dictionary mapping modality names to their feature extractors
+            fusion: Fusion module or name of fusion method to use
+            head: Optional task-specific head network
+            processors: Optional dictionary of preprocessing functions
+            freeze_backbone: Whether to freeze feature extractor parameters
+        &#34;&#34;&#34;
+        super(BasePipeline, self).__init__()
+
+        self.feature_extractors = nn.ModuleDict(models)
+        if freeze_backbone:
+            self._freeze_backbone()
+        self.fusion = fusion
+        self.head = head
+        self.processors = processors
+
+    def __call__(self, inputs: Dict[str, Any]) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Forward pass alias.
+
+        Args:
+            inputs: Dictionary of inputs for each modality
+
+        Returns:
+            torch.Tensor: Pipeline outputs
+        &#34;&#34;&#34;
+        return self.forward(inputs)
+
+    # def to(self, device: torch.device) -&gt; &#39;BasePipeline&#39;:
+    #     &#34;&#34;&#34;
+    #     Override the to method to move all models to the new device.
+    #     &#34;&#34;&#34;
+    #     self.feature_extractors = self.feature_extractors.to(device)
+    #     self.fusion = self.fusion.to(device)
+    #     if self.head is not None:
+    #         self.head = self.head.to(device)
+    #     return super(BasePipeline, self).to(device)
+
+    def _freeze_backbone(self) -&gt; None:
+        &#34;&#34;&#34;Freeze parameters of the feature extractors.
+
+        Sets requires_grad=False for all parameters in the feature extraction models
+        to prevent updating during training.
+        &#34;&#34;&#34;
+        for model in self.feature_extractors.values():
+            for param in model.parameters():
+                param.requires_grad = False
+
+    def preprocess(self, inputs: Dict[str, Any]) -&gt; Dict[str, torch.Tensor]:
+        &#34;&#34;&#34;Preprocess the raw inputs for each modality.
+
+        Args:
+            inputs: Dictionary of raw inputs for each modality
+
+        Returns:
+            Dict[str, torch.Tensor]: Preprocessed inputs
+
+        Note:
+            If no processors are defined, returns inputs unchanged.
+        &#34;&#34;&#34;
+        if self.processors is not None:
+            for modality, processor in self.processors.items():
+                inputs[modality] = processor(*inputs[modality])
+        return inputs
+
+    def extract_features(
+        self, inputs: Dict[str, torch.Tensor]
+    ) -&gt; Dict[str, torch.Tensor]:
+        &#34;&#34;&#34;Extract features from each modality.
+
+        Args:
+            inputs: Dictionary of preprocessed inputs
+
+        Returns:
+            Dict[str, torch.Tensor]: Extracted features for each modality
+        &#34;&#34;&#34;
+        for modality, model in self.feature_extractors.items():
+            inputs[modality] = model(inputs[modality])
+        return inputs
+
+    def downstream_pass(self, inputs: Dict[str, torch.Tensor]) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Apply task-specific head to fused features.
+
+        Args:
+            inputs: Dictionary containing fused embeddings
+
+        Returns:
+            torch.Tensor: Task-specific outputs
+
+        Note:
+            If no head is defined, returns inputs unchanged.
+        &#34;&#34;&#34;
+        if self.head is not None:
+            inputs[&#34;logits&#34;] = self.head(inputs[&#34;embedding&#34;])
+        return inputs
+
+    def forward(
+        self, inputs: Dict[str, Tuple[Any]], output_feats: bool = False
+    ) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Complete forward pass through the pipeline.
+
+        Args:
+            inputs: Dictionary of raw inputs for each modality
+            output_feats: Whether to include individual modality features in output
+
+        Returns:
+            torch.Tensor: Pipeline outputs including task-specific predictions
+
+        Process:
+            1. Preprocess raw inputs
+            2. Extract features from each modality
+            3. Fuse features from all modalities
+            4. Apply task-specific head
+            5. Optionally include individual features in output
+        &#34;&#34;&#34;
+        # Preprocess inputs
+        inputs = self.preprocess(inputs)
+
+        # Extract embeddings from each modality
+        feats = self.extract_features(inputs)
+
+        # Fuse embeddings into one vector
+        fused_embeddings = self.fusion(
+            {modality: feats[modality] for modality in self.fusion.modalities}
+        )
+
+        # Prepare the output
+        output = {
+            &#34;embedding&#34;: fused_embeddings,
+        }
+
+        if output_feats:
+            output.update(feats)
+
+        # Pass the fused embeddings to the head
+        output = self.downstream_pass(output)
+
+        return output</code></pre>
+</details>
+<div class="desc"><p>Base class for multimodal processing pipelines.</p>
+<p>Implements a complete pipeline workflow in the following sequence:
+1. Uni-modal inputs
+2. Preprocessing
+3. Feature Extraction
+4. Fusion
+5. Head (task specific)
+6. Output</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>feature_extractors</code></strong> :&ensp;<code>nn.ModuleDict</code></dt>
+<dd>Feature extraction models for each modality</dd>
+<dt><strong><code>fusion</code></strong> :&ensp;<code>BaseFusion</code></dt>
+<dd>Fusion module for combining modality features</dd>
+<dt><strong><code>head</code></strong> :&ensp;<code>nn.Module</code></dt>
+<dd>Task-specific head network</dd>
+<dt><strong><code>processors</code></strong> :&ensp;<code>Mapping[str, Callable]</code></dt>
+<dd>Preprocessing functions for each modality</dd>
+</dl>
+<p>Initialize the pipeline.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>models</code></strong></dt>
+<dd>Dictionary mapping modality names to their feature extractors</dd>
+<dt><strong><code>fusion</code></strong></dt>
+<dd>Fusion module or name of fusion method to use</dd>
+<dt><strong><code>head</code></strong></dt>
+<dd>Optional task-specific head network</dd>
+<dt><strong><code>processors</code></strong></dt>
+<dd>Optional dictionary of preprocessing functions</dd>
+<dt><strong><code>freeze_backbone</code></strong></dt>
+<dd>Whether to freeze feature extractor parameters</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.pipeline.base.BasePipeline.downstream_pass"><code class="name flex">
+<span>def <span class="ident">downstream_pass</span></span>(<span>self, inputs: Dict[str, torch.Tensor]) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def downstream_pass(self, inputs: Dict[str, torch.Tensor]) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Apply task-specific head to fused features.
+
+    Args:
+        inputs: Dictionary containing fused embeddings
+
+    Returns:
+        torch.Tensor: Task-specific outputs
+
+    Note:
+        If no head is defined, returns inputs unchanged.
+    &#34;&#34;&#34;
+    if self.head is not None:
+        inputs[&#34;logits&#34;] = self.head(inputs[&#34;embedding&#34;])
+    return inputs</code></pre>
+</details>
+<div class="desc"><p>Apply task-specific head to fused features.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>inputs</code></strong></dt>
+<dd>Dictionary containing fused embeddings</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Task-specific outputs</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>If no head is defined, returns inputs unchanged.</p></div>
+</dd>
+<dt id="synthweave.pipeline.base.BasePipeline.extract_features"><code class="name flex">
+<span>def <span class="ident">extract_features</span></span>(<span>self, inputs: Dict[str, torch.Tensor]) ‑> Dict[str, torch.Tensor]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def extract_features(
+    self, inputs: Dict[str, torch.Tensor]
+) -&gt; Dict[str, torch.Tensor]:
+    &#34;&#34;&#34;Extract features from each modality.
+
+    Args:
+        inputs: Dictionary of preprocessed inputs
+
+    Returns:
+        Dict[str, torch.Tensor]: Extracted features for each modality
+    &#34;&#34;&#34;
+    for modality, model in self.feature_extractors.items():
+        inputs[modality] = model(inputs[modality])
+    return inputs</code></pre>
+</details>
+<div class="desc"><p>Extract features from each modality.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>inputs</code></strong></dt>
+<dd>Dictionary of preprocessed inputs</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>Dict[str, torch.Tensor]</code></dt>
+<dd>Extracted features for each modality</dd>
+</dl></div>
+</dd>
+<dt id="synthweave.pipeline.base.BasePipeline.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, inputs: Dict[str, Tuple[Any]], output_feats: bool = False) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(
+    self, inputs: Dict[str, Tuple[Any]], output_feats: bool = False
+) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Complete forward pass through the pipeline.
+
+    Args:
+        inputs: Dictionary of raw inputs for each modality
+        output_feats: Whether to include individual modality features in output
+
+    Returns:
+        torch.Tensor: Pipeline outputs including task-specific predictions
+
+    Process:
+        1. Preprocess raw inputs
+        2. Extract features from each modality
+        3. Fuse features from all modalities
+        4. Apply task-specific head
+        5. Optionally include individual features in output
+    &#34;&#34;&#34;
+    # Preprocess inputs
+    inputs = self.preprocess(inputs)
+
+    # Extract embeddings from each modality
+    feats = self.extract_features(inputs)
+
+    # Fuse embeddings into one vector
+    fused_embeddings = self.fusion(
+        {modality: feats[modality] for modality in self.fusion.modalities}
+    )
+
+    # Prepare the output
+    output = {
+        &#34;embedding&#34;: fused_embeddings,
+    }
+
+    if output_feats:
+        output.update(feats)
+
+    # Pass the fused embeddings to the head
+    output = self.downstream_pass(output)
+
+    return output</code></pre>
+</details>
+<div class="desc"><p>Complete forward pass through the pipeline.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>inputs</code></strong></dt>
+<dd>Dictionary of raw inputs for each modality</dd>
+<dt><strong><code>output_feats</code></strong></dt>
+<dd>Whether to include individual modality features in output</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Pipeline outputs including task-specific predictions</dd>
+</dl>
+<h2 id="process">Process</h2>
+<ol>
+<li>Preprocess raw inputs</li>
+<li>Extract features from each modality</li>
+<li>Fuse features from all modalities</li>
+<li>Apply task-specific head</li>
+<li>Optionally include individual features in output</li>
+</ol></div>
+</dd>
+<dt id="synthweave.pipeline.base.BasePipeline.preprocess"><code class="name flex">
+<span>def <span class="ident">preprocess</span></span>(<span>self, inputs: Dict[str, Any]) ‑> Dict[str, torch.Tensor]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def preprocess(self, inputs: Dict[str, Any]) -&gt; Dict[str, torch.Tensor]:
+    &#34;&#34;&#34;Preprocess the raw inputs for each modality.
+
+    Args:
+        inputs: Dictionary of raw inputs for each modality
+
+    Returns:
+        Dict[str, torch.Tensor]: Preprocessed inputs
+
+    Note:
+        If no processors are defined, returns inputs unchanged.
+    &#34;&#34;&#34;
+    if self.processors is not None:
+        for modality, processor in self.processors.items():
+            inputs[modality] = processor(*inputs[modality])
+    return inputs</code></pre>
+</details>
+<div class="desc"><p>Preprocess the raw inputs for each modality.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>inputs</code></strong></dt>
+<dd>Dictionary of raw inputs for each modality</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>Dict[str, torch.Tensor]</code></dt>
+<dd>Preprocessed inputs</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>If no processors are defined, returns inputs unchanged.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="synthweave.pipeline" href="index.html">synthweave.pipeline</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="synthweave.pipeline.base.BasePipeline" href="#synthweave.pipeline.base.BasePipeline">BasePipeline</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.pipeline.base.BasePipeline.downstream_pass" href="#synthweave.pipeline.base.BasePipeline.downstream_pass">downstream_pass</a></code></li>
+<li><code><a title="synthweave.pipeline.base.BasePipeline.extract_features" href="#synthweave.pipeline.base.BasePipeline.extract_features">extract_features</a></code></li>
+<li><code><a title="synthweave.pipeline.base.BasePipeline.forward" href="#synthweave.pipeline.base.BasePipeline.forward">forward</a></code></li>
+<li><code><a title="synthweave.pipeline.base.BasePipeline.preprocess" href="#synthweave.pipeline.base.BasePipeline.preprocess">preprocess</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>
