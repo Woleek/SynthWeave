@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>synthweave.loss.classification API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>synthweave.loss.classification</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="synthweave.loss.classification.AAMSoftmaxLoss"><code class="flex name class">
+<span>class <span class="ident">AAMSoftmaxLoss</span></span>
+<span>(</span><span>embedding_dim: int, num_classes: int, margin: float = 0.2, scale: float = 30.0)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AAMSoftmaxLoss(nn.Module):
+    &#34;&#34;&#34;
+    (Additive Angular Margin Softmax)
+    Variant of AM-Softmax that adds an angular margin for more robust embeddings.
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        num_classes: int,
+        margin: float = 0.2,
+        scale: float = 30.0,
+    ):
+        super(AAMSoftmaxLoss, self).__init__()
+        self.embedding_dim = embedding_dim
+        self.num_classes = num_classes
+        self.margin = margin
+        self.scale = scale
+        self.weight = nn.Parameter(torch.FloatTensor(num_classes, embedding_dim))
+        nn.init.xavier_uniform_(self.weight)
+
+    def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+        # Normalize weights and input
+        embeddings = F.normalize(embeddings)
+        weight = F.normalize(self.weight)
+
+        # Compute cosine similarity
+        cosine = F.linear(embeddings, weight)
+        theta = torch.acos(torch.clamp(cosine, -1.0, 1.0))
+        target_logit = torch.cos(theta + self.margin)
+
+        # Create one-hot encoding for labels
+        one_hot = torch.zeros_like(cosine)
+        one_hot = one_hot.scatter(1, labels.view(-1, 1), 1.0)
+
+        # Apply margin
+        logits = one_hot * target_logit + (1.0 - one_hot) * cosine
+        logits = logits * self.scale
+
+        # Compute loss
+        loss = F.cross_entropy(logits, labels)
+
+        return loss</code></pre>
+</details>
+<div class="desc"><p>(Additive Angular Margin Softmax)
+Variant of AM-Softmax that adds an angular margin for more robust embeddings.</p>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.loss.classification.AAMSoftmaxLoss.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, embeddings: torch.Tensor, labels: torch.Tensor) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+    # Normalize weights and input
+    embeddings = F.normalize(embeddings)
+    weight = F.normalize(self.weight)
+
+    # Compute cosine similarity
+    cosine = F.linear(embeddings, weight)
+    theta = torch.acos(torch.clamp(cosine, -1.0, 1.0))
+    target_logit = torch.cos(theta + self.margin)
+
+    # Create one-hot encoding for labels
+    one_hot = torch.zeros_like(cosine)
+    one_hot = one_hot.scatter(1, labels.view(-1, 1), 1.0)
+
+    # Apply margin
+    logits = one_hot * target_logit + (1.0 - one_hot) * cosine
+    logits = logits * self.scale
+
+    # Compute loss
+    loss = F.cross_entropy(logits, labels)
+
+    return loss</code></pre>
+</details>
+<div class="desc"><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the :class:<code>Module</code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.loss.classification.AMSoftmaxLoss"><code class="flex name class">
+<span>class <span class="ident">AMSoftmaxLoss</span></span>
+<span>(</span><span>embedding_dim: int, num_classes: int, margin: float = 0.35, scale: float = 30.0)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AMSoftmaxLoss(nn.Module):
+    &#34;&#34;&#34;Additive Margin Softmax loss for deep metric learning.
+
+    Adds a margin to the target logit to enforce larger inter-class distances
+    and smaller intra-class distances in the feature space.
+
+    Based on: &#34;Additive Margin Softmax for Face Verification&#34;
+    Source: https://arxiv.org/abs/1801.05599
+
+    Attributes:
+        embedding_dim: Dimension of the feature embeddings
+        num_classes: Number of classes in the dataset
+        margin: Additive margin to be applied
+        scale: Scale factor for logits
+        weight: Learnable class weights
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        num_classes: int,
+        margin: float = 0.35,
+        scale: float = 30.0,
+    ):
+        &#34;&#34;&#34;Initialize the AM-Softmax loss module.
+
+        Args:
+            embedding_dim: Dimension of the feature embeddings
+            num_classes: Number of classes in the dataset
+            margin: Additive margin to be applied
+            scale: Scale factor for logits
+        &#34;&#34;&#34;
+        super(AMSoftmaxLoss, self).__init__()
+        self.embedding_dim = embedding_dim
+        self.num_classes = num_classes
+        self.margin = margin
+        self.scale = scale
+        self.weight = nn.Parameter(torch.FloatTensor(num_classes, embedding_dim))
+        nn.init.xavier_uniform_(self.weight)
+
+    def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Compute AM-Softmax loss.
+
+        Args:
+            embeddings: Feature embeddings of shape (batch_size, embedding_dim)
+            labels: Ground truth labels of shape (batch_size,)
+
+        Returns:
+            torch.Tensor: Scalar loss value
+
+        Process:
+            1. Normalize embeddings and weights
+            2. Compute cosine similarities
+            3. Add margin to target logits
+            4. Scale logits and compute cross entropy
+        &#34;&#34;&#34;
+        embeddings = F.normalize(embeddings)
+        weight = F.normalize(self.weight)
+        cosine = F.linear(embeddings, weight)
+        target_logit = cosine - self.margin
+        one_hot = torch.zeros_like(cosine)
+        one_hot = one_hot.scatter(1, labels.view(-1, 1), 1.0)
+        logits = one_hot * target_logit + (1.0 - one_hot) * cosine
+        logits = logits * self.scale
+        loss = F.cross_entropy(logits, labels)
+        return loss</code></pre>
+</details>
+<div class="desc"><p>Additive Margin Softmax loss for deep metric learning.</p>
+<p>Adds a margin to the target logit to enforce larger inter-class distances
+and smaller intra-class distances in the feature space.</p>
+<p>Based on: "Additive Margin Softmax for Face Verification"
+Source: <a href="https://arxiv.org/abs/1801.05599">https://arxiv.org/abs/1801.05599</a></p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>embedding_dim</code></strong></dt>
+<dd>Dimension of the feature embeddings</dd>
+<dt><strong><code>num_classes</code></strong></dt>
+<dd>Number of classes in the dataset</dd>
+<dt><strong><code>margin</code></strong></dt>
+<dd>Additive margin to be applied</dd>
+<dt><strong><code>scale</code></strong></dt>
+<dd>Scale factor for logits</dd>
+<dt><strong><code>weight</code></strong></dt>
+<dd>Learnable class weights</dd>
+</dl>
+<p>Initialize the AM-Softmax loss module.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>embedding_dim</code></strong></dt>
+<dd>Dimension of the feature embeddings</dd>
+<dt><strong><code>num_classes</code></strong></dt>
+<dd>Number of classes in the dataset</dd>
+<dt><strong><code>margin</code></strong></dt>
+<dd>Additive margin to be applied</dd>
+<dt><strong><code>scale</code></strong></dt>
+<dd>Scale factor for logits</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.loss.classification.AMSoftmaxLoss.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, embeddings: torch.Tensor, labels: torch.Tensor) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Compute AM-Softmax loss.
+
+    Args:
+        embeddings: Feature embeddings of shape (batch_size, embedding_dim)
+        labels: Ground truth labels of shape (batch_size,)
+
+    Returns:
+        torch.Tensor: Scalar loss value
+
+    Process:
+        1. Normalize embeddings and weights
+        2. Compute cosine similarities
+        3. Add margin to target logits
+        4. Scale logits and compute cross entropy
+    &#34;&#34;&#34;
+    embeddings = F.normalize(embeddings)
+    weight = F.normalize(self.weight)
+    cosine = F.linear(embeddings, weight)
+    target_logit = cosine - self.margin
+    one_hot = torch.zeros_like(cosine)
+    one_hot = one_hot.scatter(1, labels.view(-1, 1), 1.0)
+    logits = one_hot * target_logit + (1.0 - one_hot) * cosine
+    logits = logits * self.scale
+    loss = F.cross_entropy(logits, labels)
+    return loss</code></pre>
+</details>
+<div class="desc"><p>Compute AM-Softmax loss.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>embeddings</code></strong></dt>
+<dd>Feature embeddings of shape (batch_size, embedding_dim)</dd>
+<dt><strong><code>labels</code></strong></dt>
+<dd>Ground truth labels of shape (batch_size,)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Scalar loss value</dd>
+</dl>
+<h2 id="process">Process</h2>
+<ol>
+<li>Normalize embeddings and weights</li>
+<li>Compute cosine similarities</li>
+<li>Add margin to target logits</li>
+<li>Scale logits and compute cross entropy</li>
+</ol></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.loss.classification.ArcMarginLoss"><code class="flex name class">
+<span>class <span class="ident">ArcMarginLoss</span></span>
+<span>(</span><span>num_classes: int, embedding_dim: int, scale: float = 30.0, margin: float = 0.5)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ArcMarginLoss(nn.Module):
+    &#34;&#34;&#34;
+    Introduces an angular margin to the softmax function to enhance inter-class separability.
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        num_classes: int,
+        embedding_dim: int,
+        scale: float = 30.0,
+        margin: float = 0.50,
+    ):
+        super(ArcMarginLoss, self).__init__()
+        self.embedding_dim = embedding_dim
+        self.num_classes = num_classes
+        self.scale = scale
+        self.margin = margin
+        self.weight = nn.Parameter(torch.FloatTensor(num_classes, embedding_dim))
+        nn.init.xavier_uniform_(self.weight)
+
+    def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+        # Normalize weights and input
+        cosine = F.linear(F.normalize(embeddings), F.normalize(self.weight))
+        sine = torch.sqrt(1.0 - torch.clamp(cosine**2, 0.0, 1.0))
+
+        # Compute theta + margin
+        phi = cosine * torch.cos(self.margin) - sine * torch.sin(self.margin)
+
+        # Create one-hot encoding for labels
+        one_hot = torch.zeros_like(cosine)
+        one_hot.scatter_(1, labels.view(-1, 1), 1.0)
+
+        # Apply margin
+        logits = one_hot * phi + (1.0 - one_hot) * cosine
+        logits = self.scale * logits
+
+        # Compute loss
+        loss = F.cross_entropy(logits, labels)
+
+        return loss</code></pre>
+</details>
+<div class="desc"><p>Introduces an angular margin to the softmax function to enhance inter-class separability.</p>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.loss.classification.ArcMarginLoss.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, embeddings: torch.Tensor, labels: torch.Tensor) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+    # Normalize weights and input
+    cosine = F.linear(F.normalize(embeddings), F.normalize(self.weight))
+    sine = torch.sqrt(1.0 - torch.clamp(cosine**2, 0.0, 1.0))
+
+    # Compute theta + margin
+    phi = cosine * torch.cos(self.margin) - sine * torch.sin(self.margin)
+
+    # Create one-hot encoding for labels
+    one_hot = torch.zeros_like(cosine)
+    one_hot.scatter_(1, labels.view(-1, 1), 1.0)
+
+    # Apply margin
+    logits = one_hot * phi + (1.0 - one_hot) * cosine
+    logits = self.scale * logits
+
+    # Compute loss
+    loss = F.cross_entropy(logits, labels)
+
+    return loss</code></pre>
+</details>
+<div class="desc"><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the :class:<code>Module</code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.loss.classification.BinaryCrossEntropyWithLogitsLoss"><code class="flex name class">
+<span>class <span class="ident">BinaryCrossEntropyWithLogitsLoss</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BinaryCrossEntropyWithLogitsLoss(nn.Module):
+    &#34;&#34;&#34;Binary cross-entropy loss with logits for binary classification.
+
+    Combines Sigmoid and BCELoss in a single function. More numerically stable
+    than using a separate Sigmoid followed by BCELoss.
+
+    Note:
+        Expects unnormalized logits as input (before sigmoid).
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        super(BinaryCrossEntropyWithLogitsLoss, self).__init__()
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Compute binary cross entropy loss with logits.
+
+        Args:
+            logits: Raw model outputs of shape (batch_size, 1)
+            labels: Ground truth labels of shape (batch_size, 1)
+
+        Returns:
+            torch.Tensor: Scalar loss value
+        &#34;&#34;&#34;
+        loss = F.binary_cross_entropy_with_logits(logits, labels)
+
+        return loss</code></pre>
+</details>
+<div class="desc"><p>Binary cross-entropy loss with logits for binary classification.</p>
+<p>Combines Sigmoid and BCELoss in a single function. More numerically stable
+than using a separate Sigmoid followed by BCELoss.</p>
+<h2 id="note">Note</h2>
+<p>Expects unnormalized logits as input (before sigmoid).</p>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.loss.classification.BinaryCrossEntropyWithLogitsLoss.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, logits: torch.Tensor, labels: torch.Tensor) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, logits: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Compute binary cross entropy loss with logits.
+
+    Args:
+        logits: Raw model outputs of shape (batch_size, 1)
+        labels: Ground truth labels of shape (batch_size, 1)
+
+    Returns:
+        torch.Tensor: Scalar loss value
+    &#34;&#34;&#34;
+    loss = F.binary_cross_entropy_with_logits(logits, labels)
+
+    return loss</code></pre>
+</details>
+<div class="desc"><p>Compute binary cross entropy loss with logits.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>logits</code></strong></dt>
+<dd>Raw model outputs of shape (batch_size, 1)</dd>
+<dt><strong><code>labels</code></strong></dt>
+<dd>Ground truth labels of shape (batch_size, 1)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Scalar loss value</dd>
+</dl></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.loss.classification.CenterLoss"><code class="flex name class">
+<span>class <span class="ident">CenterLoss</span></span>
+<span>(</span><span>num_classes: int, embedding_dim: int, lambda_c: float = 1.0)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CenterLoss(nn.Module):
+    &#34;&#34;&#34;Center loss for deep metric learning.
+
+    Minimizes the distance between deep features and their corresponding class centers.
+    Used alongside softmax loss to enhance intra-class compactness.
+
+    Based on: &#34;A Discriminative Feature Learning Approach for Deep Face Recognition&#34;
+    Source: https://ydwen.github.io/papers/WenECCV16.pdf
+
+    Attributes:
+        num_classes: Number of classes in the dataset
+        embedding_dim: Dimension of the feature embeddings
+        lambda_c: Weight for the center loss term
+        centers: Learnable class centers of shape (num_classes, embedding_dim)
+    &#34;&#34;&#34;
+
+    def __init__(self, num_classes: int, embedding_dim: int, lambda_c: float = 1.0):
+        &#34;&#34;&#34;Initialize the center loss module.
+
+        Args:
+            num_classes: Number of classes in the dataset
+            embedding_dim: Dimension of the feature embeddings
+            lambda_c: Weight for the center loss term
+        &#34;&#34;&#34;
+        super(CenterLoss, self).__init__()
+        self.num_classes = num_classes
+        self.embedding_dim = embedding_dim
+        self.lambda_c = lambda_c
+        self.centers = nn.Parameter(torch.randn(num_classes, embedding_dim))
+
+    def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Compute center loss.
+
+        Args:
+            embeddings: Feature embeddings of shape (batch_size, embedding_dim)
+            labels: Ground truth labels of shape (batch_size,)
+
+        Returns:
+            torch.Tensor: Scalar loss value
+
+        Process:
+            1. Select centers corresponding to the input labels
+            2. Compute squared distances between features and their centers
+            3. Average the distances and apply lambda weight
+        &#34;&#34;&#34;
+        batch_size = embeddings.size(0)
+        centers_batch = self.centers[labels]
+        loss = torch.sum((embeddings - centers_batch) ** 2) / (2.0 * batch_size)
+        loss = self.lambda_c * loss
+        return loss</code></pre>
+</details>
+<div class="desc"><p>Center loss for deep metric learning.</p>
+<p>Minimizes the distance between deep features and their corresponding class centers.
+Used alongside softmax loss to enhance intra-class compactness.</p>
+<p>Based on: "A Discriminative Feature Learning Approach for Deep Face Recognition"
+Source: <a href="https://ydwen.github.io/papers/WenECCV16.pdf">https://ydwen.github.io/papers/WenECCV16.pdf</a></p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>num_classes</code></strong></dt>
+<dd>Number of classes in the dataset</dd>
+<dt><strong><code>embedding_dim</code></strong></dt>
+<dd>Dimension of the feature embeddings</dd>
+<dt><strong><code>lambda_c</code></strong></dt>
+<dd>Weight for the center loss term</dd>
+<dt><strong><code>centers</code></strong></dt>
+<dd>Learnable class centers of shape (num_classes, embedding_dim)</dd>
+</dl>
+<p>Initialize the center loss module.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>num_classes</code></strong></dt>
+<dd>Number of classes in the dataset</dd>
+<dt><strong><code>embedding_dim</code></strong></dt>
+<dd>Dimension of the feature embeddings</dd>
+<dt><strong><code>lambda_c</code></strong></dt>
+<dd>Weight for the center loss term</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.loss.classification.CenterLoss.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, embeddings: torch.Tensor, labels: torch.Tensor) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Compute center loss.
+
+    Args:
+        embeddings: Feature embeddings of shape (batch_size, embedding_dim)
+        labels: Ground truth labels of shape (batch_size,)
+
+    Returns:
+        torch.Tensor: Scalar loss value
+
+    Process:
+        1. Select centers corresponding to the input labels
+        2. Compute squared distances between features and their centers
+        3. Average the distances and apply lambda weight
+    &#34;&#34;&#34;
+    batch_size = embeddings.size(0)
+    centers_batch = self.centers[labels]
+    loss = torch.sum((embeddings - centers_batch) ** 2) / (2.0 * batch_size)
+    loss = self.lambda_c * loss
+    return loss</code></pre>
+</details>
+<div class="desc"><p>Compute center loss.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>embeddings</code></strong></dt>
+<dd>Feature embeddings of shape (batch_size, embedding_dim)</dd>
+<dt><strong><code>labels</code></strong></dt>
+<dd>Ground truth labels of shape (batch_size,)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Scalar loss value</dd>
+</dl>
+<h2 id="process">Process</h2>
+<ol>
+<li>Select centers corresponding to the input labels</li>
+<li>Compute squared distances between features and their centers</li>
+<li>Average the distances and apply lambda weight</li>
+</ol></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.loss.classification.CrossEntropyLoss"><code class="flex name class">
+<span>class <span class="ident">CrossEntropyLoss</span></span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CrossEntropyLoss(nn.Module):
+    &#34;&#34;&#34;Standard cross-entropy loss for multi-class classification.
+
+    Combines LogSoftmax and NLLLoss in a single function. Useful for training
+    models that output raw logits for multiple classes.
+
+    Note:
+        Expects unnormalized logits as input (before softmax).
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        super(CrossEntropyLoss, self).__init__()
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Compute cross entropy loss.
+
+        Args:
+            logits: Raw model outputs of shape (batch_size, num_classes)
+            labels: Ground truth labels of shape (batch_size,)
+
+        Returns:
+            torch.Tensor: Scalar loss value
+        &#34;&#34;&#34;
+        loss = F.cross_entropy(logits, labels)
+
+        return loss</code></pre>
+</details>
+<div class="desc"><p>Standard cross-entropy loss for multi-class classification.</p>
+<p>Combines LogSoftmax and NLLLoss in a single function. Useful for training
+models that output raw logits for multiple classes.</p>
+<h2 id="note">Note</h2>
+<p>Expects unnormalized logits as input (before softmax).</p>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.loss.classification.CrossEntropyLoss.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, logits: torch.Tensor, labels: torch.Tensor) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, logits: torch.Tensor, labels: torch.Tensor) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Compute cross entropy loss.
+
+    Args:
+        logits: Raw model outputs of shape (batch_size, num_classes)
+        labels: Ground truth labels of shape (batch_size,)
+
+    Returns:
+        torch.Tensor: Scalar loss value
+    &#34;&#34;&#34;
+    loss = F.cross_entropy(logits, labels)
+
+    return loss</code></pre>
+</details>
+<div class="desc"><p>Compute cross entropy loss.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>logits</code></strong></dt>
+<dd>Raw model outputs of shape (batch_size, num_classes)</dd>
+<dt><strong><code>labels</code></strong></dt>
+<dd>Ground truth labels of shape (batch_size,)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Scalar loss value</dd>
+</dl></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="synthweave.loss" href="index.html">synthweave.loss</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="synthweave.loss.classification.AAMSoftmaxLoss" href="#synthweave.loss.classification.AAMSoftmaxLoss">AAMSoftmaxLoss</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.loss.classification.AAMSoftmaxLoss.forward" href="#synthweave.loss.classification.AAMSoftmaxLoss.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.loss.classification.AMSoftmaxLoss" href="#synthweave.loss.classification.AMSoftmaxLoss">AMSoftmaxLoss</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.loss.classification.AMSoftmaxLoss.forward" href="#synthweave.loss.classification.AMSoftmaxLoss.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.loss.classification.ArcMarginLoss" href="#synthweave.loss.classification.ArcMarginLoss">ArcMarginLoss</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.loss.classification.ArcMarginLoss.forward" href="#synthweave.loss.classification.ArcMarginLoss.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.loss.classification.BinaryCrossEntropyWithLogitsLoss" href="#synthweave.loss.classification.BinaryCrossEntropyWithLogitsLoss">BinaryCrossEntropyWithLogitsLoss</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.loss.classification.BinaryCrossEntropyWithLogitsLoss.forward" href="#synthweave.loss.classification.BinaryCrossEntropyWithLogitsLoss.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.loss.classification.CenterLoss" href="#synthweave.loss.classification.CenterLoss">CenterLoss</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.loss.classification.CenterLoss.forward" href="#synthweave.loss.classification.CenterLoss.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.loss.classification.CrossEntropyLoss" href="#synthweave.loss.classification.CrossEntropyLoss">CrossEntropyLoss</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.loss.classification.CrossEntropyLoss.forward" href="#synthweave.loss.classification.CrossEntropyLoss.forward">forward</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>

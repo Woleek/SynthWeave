@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>synthweave.utils.modules API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>synthweave.utils.modules</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="synthweave.utils.modules.L2NormalizationLayer"><code class="flex name class">
+<span>class <span class="ident">L2NormalizationLayer</span></span>
+<span>(</span><span>dim=-1, eps=1e-12)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class L2NormalizationLayer(nn.Module):
+    &#34;&#34;&#34;A layer that performs L2 normalization on the input tensor.&#34;&#34;&#34;
+
+    def __init__(self, dim=-1, eps=1e-12):
+        &#34;&#34;&#34;
+        Args:
+            dim (int, optional): Dimension along which to normalize. Defaults to -1.
+            eps (float, optional): Small constant for numerical stability. Defaults to 1e-12.
+        &#34;&#34;&#34;
+        super(L2NormalizationLayer, self).__init__()
+        self.dim = dim
+        self.eps = eps
+
+    def forward(self, x):
+        &#34;&#34;&#34;Forward pass performing L2 normalization.
+
+        Args:
+            x (torch.Tensor): Input tensor
+
+        Returns:
+            torch.Tensor: L2 normalized tensor
+        &#34;&#34;&#34;
+        return F.normalize(x, p=2, dim=self.dim, eps=self.eps)</code></pre>
+</details>
+<div class="desc"><p>A layer that performs L2 normalization on the input tensor.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>dim</code></strong> :&ensp;<code>int</code>, optional</dt>
+<dd>Dimension along which to normalize. Defaults to -1.</dd>
+<dt><strong><code>eps</code></strong> :&ensp;<code>float</code>, optional</dt>
+<dd>Small constant for numerical stability. Defaults to 1e-12.</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.utils.modules.L2NormalizationLayer.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, x) ‑> Callable[..., Any]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, x):
+    &#34;&#34;&#34;Forward pass performing L2 normalization.
+
+    Args:
+        x (torch.Tensor): Input tensor
+
+    Returns:
+        torch.Tensor: L2 normalized tensor
+    &#34;&#34;&#34;
+    return F.normalize(x, p=2, dim=self.dim, eps=self.eps)</code></pre>
+</details>
+<div class="desc"><p>Forward pass performing L2 normalization.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Input tensor</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>L2 normalized tensor</dd>
+</dl></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.utils.modules.LazyLinearXavier"><code class="flex name class">
+<span>class <span class="ident">LazyLinearXavier</span></span>
+<span>(</span><span>out_features: int, bias: bool = True)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class LazyLinearXavier(nn.LazyLinear):
+    &#34;&#34;&#34;A lazy linear layer with Xavier uniform initialization.
+
+    This layer automatically determines its input size on first use and
+    initializes weights using Xavier uniform initialization.
+    &#34;&#34;&#34;
+
+    def __init__(self, out_features: int, bias: bool = True):
+        &#34;&#34;&#34;
+        Args:
+            out_features (int): Size of output features
+            bias (bool, optional): If True, adds a learnable bias. Defaults to True.
+        &#34;&#34;&#34;
+        super(LazyLinearXavier, self).__init__(out_features, bias)
+
+    def reset_parameters(self):
+        &#34;&#34;&#34;Initializes the layer parameters using Xavier uniform initialization.&#34;&#34;&#34;
+        if not self.has_uninitialized_params() and self.in_features != 0:
+            nn.init.xavier_uniform_(self.weight)
+            if self.bias is not None:
+                nn.init.constant_(self.bias, 0.01)</code></pre>
+</details>
+<div class="desc"><p>A lazy linear layer with Xavier uniform initialization.</p>
+<p>This layer automatically determines its input size on first use and
+initializes weights using Xavier uniform initialization.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>out_features</code></strong> :&ensp;<code>int</code></dt>
+<dd>Size of output features</dd>
+<dt><strong><code>bias</code></strong> :&ensp;<code>bool</code>, optional</dt>
+<dd>If True, adds a learnable bias. Defaults to True.</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.linear.LazyLinear</li>
+<li>torch.nn.modules.lazy.LazyModuleMixin</li>
+<li>torch.nn.modules.linear.Linear</li>
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.utils.modules.LazyLinearXavier.reset_parameters"><code class="name flex">
+<span>def <span class="ident">reset_parameters</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reset_parameters(self):
+    &#34;&#34;&#34;Initializes the layer parameters using Xavier uniform initialization.&#34;&#34;&#34;
+    if not self.has_uninitialized_params() and self.in_features != 0:
+        nn.init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            nn.init.constant_(self.bias, 0.01)</code></pre>
+</details>
+<div class="desc"><p>Initializes the layer parameters using Xavier uniform initialization.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.utils.modules.LazyProjectionMLP"><code class="flex name class">
+<span>class <span class="ident">LazyProjectionMLP</span></span>
+<span>(</span><span>hidden_dim: int, out_dim: int, bias: bool = True, dropout: float = 0.5)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class LazyProjectionMLP(nn.Module):
+    &#34;&#34;&#34;A lazy projection MLP with two linear layers, batch normalization, ReLU, and dropout.
+
+    Similar to ProjectionMLP but with a lazy first layer that infers input dimension.
+    &#34;&#34;&#34;
+
+    def __init__(
+        self, hidden_dim: int, out_dim: int, bias: bool = True, dropout: float = 0.5
+    ):
+        &#34;&#34;&#34;
+        Args:
+            hidden_dim (int): Hidden layer dimension
+            out_dim (int): Output dimension
+            bias (bool, optional): If True, adds learnable bias to linear layers. Defaults to True.
+            dropout (float, optional): Dropout probability. Defaults to 0.5.
+        &#34;&#34;&#34;
+        super(LazyProjectionMLP, self).__init__()
+
+        self.proj = nn.Sequential(
+            LazyLinearXavier(hidden_dim, bias),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            LinearXavier(hidden_dim, out_dim, bias),
+        )
+
+    def forward(self, x):
+        &#34;&#34;&#34;Forward pass of the MLP.
+
+        Args:
+            x (torch.Tensor): Input tensor
+
+        Returns:
+            torch.Tensor: Output tensor
+        &#34;&#34;&#34;
+        return self.proj(x)</code></pre>
+</details>
+<div class="desc"><p>A lazy projection MLP with two linear layers, batch normalization, ReLU, and dropout.</p>
+<p>Similar to ProjectionMLP but with a lazy first layer that infers input dimension.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>hidden_dim</code></strong> :&ensp;<code>int</code></dt>
+<dd>Hidden layer dimension</dd>
+<dt><strong><code>out_dim</code></strong> :&ensp;<code>int</code></dt>
+<dd>Output dimension</dd>
+<dt><strong><code>bias</code></strong> :&ensp;<code>bool</code>, optional</dt>
+<dd>If True, adds learnable bias to linear layers. Defaults to True.</dd>
+<dt><strong><code>dropout</code></strong> :&ensp;<code>float</code>, optional</dt>
+<dd>Dropout probability. Defaults to 0.5.</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.utils.modules.LazyProjectionMLP.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, x) ‑> Callable[..., Any]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, x):
+    &#34;&#34;&#34;Forward pass of the MLP.
+
+    Args:
+        x (torch.Tensor): Input tensor
+
+    Returns:
+        torch.Tensor: Output tensor
+    &#34;&#34;&#34;
+    return self.proj(x)</code></pre>
+</details>
+<div class="desc"><p>Forward pass of the MLP.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Input tensor</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Output tensor</dd>
+</dl></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.utils.modules.LinearXavier"><code class="flex name class">
+<span>class <span class="ident">LinearXavier</span></span>
+<span>(</span><span>in_features: int, out_features: int, bias: bool = True)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class LinearXavier(nn.Linear):
+    &#34;&#34;&#34;A linear layer with Xavier uniform initialization.&#34;&#34;&#34;
+
+    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+        &#34;&#34;&#34;
+        Args:
+            in_features (int): Size of input features
+            out_features (int): Size of output features
+            bias (bool, optional): If True, adds a learnable bias. Defaults to True.
+        &#34;&#34;&#34;
+        super(LinearXavier, self).__init__(in_features, out_features, bias)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        &#34;&#34;&#34;Initializes the layer parameters using Xavier uniform initialization.&#34;&#34;&#34;
+        nn.init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            nn.init.constant_(self.bias, 0.01)</code></pre>
+</details>
+<div class="desc"><p>A linear layer with Xavier uniform initialization.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>in_features</code></strong> :&ensp;<code>int</code></dt>
+<dd>Size of input features</dd>
+<dt><strong><code>out_features</code></strong> :&ensp;<code>int</code></dt>
+<dd>Size of output features</dd>
+<dt><strong><code>bias</code></strong> :&ensp;<code>bool</code>, optional</dt>
+<dd>If True, adds a learnable bias. Defaults to True.</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.linear.Linear</li>
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.utils.modules.LinearXavier.reset_parameters"><code class="name flex">
+<span>def <span class="ident">reset_parameters</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reset_parameters(self):
+    &#34;&#34;&#34;Initializes the layer parameters using Xavier uniform initialization.&#34;&#34;&#34;
+    nn.init.xavier_uniform_(self.weight)
+    if self.bias is not None:
+        nn.init.constant_(self.bias, 0.01)</code></pre>
+</details>
+<div class="desc"><p>Initializes the layer parameters using Xavier uniform initialization.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.utils.modules.ProjectionMLP"><code class="flex name class">
+<span>class <span class="ident">ProjectionMLP</span></span>
+<span>(</span><span>in_dim: int, hidden_dim: int, out_dim: int, bias: bool = True, dropout: float = 0.5)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ProjectionMLP(nn.Module):
+    &#34;&#34;&#34;A projection MLP with two linear layers, batch normalization, ReLU, and dropout.
+
+    The architecture follows: Linear -&gt; BatchNorm -&gt; ReLU -&gt; Dropout -&gt; Linear
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        in_dim: int,
+        hidden_dim: int,
+        out_dim: int,
+        bias: bool = True,
+        dropout: float = 0.5,
+    ):
+        &#34;&#34;&#34;
+        Args:
+            in_dim (int): Input dimension
+            hidden_dim (int): Hidden layer dimension
+            out_dim (int): Output dimension
+            bias (bool, optional): If True, adds learnable bias to linear layers. Defaults to True.
+            dropout (float, optional): Dropout probability. Defaults to 0.5.
+        &#34;&#34;&#34;
+        super(ProjectionMLP, self).__init__()
+
+        self.proj = nn.Sequential(
+            LinearXavier(in_dim, hidden_dim, bias),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            LinearXavier(hidden_dim, out_dim, bias),
+        )
+
+    def forward(self, x):
+        &#34;&#34;&#34;Forward pass of the MLP.
+
+        Args:
+            x (torch.Tensor): Input tensor
+
+        Returns:
+            torch.Tensor: Output tensor
+        &#34;&#34;&#34;
+        return self.proj(x)</code></pre>
+</details>
+<div class="desc"><p>A projection MLP with two linear layers, batch normalization, ReLU, and dropout.</p>
+<p>The architecture follows: Linear -&gt; BatchNorm -&gt; ReLU -&gt; Dropout -&gt; Linear</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>in_dim</code></strong> :&ensp;<code>int</code></dt>
+<dd>Input dimension</dd>
+<dt><strong><code>hidden_dim</code></strong> :&ensp;<code>int</code></dt>
+<dd>Hidden layer dimension</dd>
+<dt><strong><code>out_dim</code></strong> :&ensp;<code>int</code></dt>
+<dd>Output dimension</dd>
+<dt><strong><code>bias</code></strong> :&ensp;<code>bool</code>, optional</dt>
+<dd>If True, adds learnable bias to linear layers. Defaults to True.</dd>
+<dt><strong><code>dropout</code></strong> :&ensp;<code>float</code>, optional</dt>
+<dd>Dropout probability. Defaults to 0.5.</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.utils.modules.ProjectionMLP.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, x) ‑> Callable[..., Any]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, x):
+    &#34;&#34;&#34;Forward pass of the MLP.
+
+    Args:
+        x (torch.Tensor): Input tensor
+
+    Returns:
+        torch.Tensor: Output tensor
+    &#34;&#34;&#34;
+    return self.proj(x)</code></pre>
+</details>
+<div class="desc"><p>Forward pass of the MLP.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Input tensor</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Output tensor</dd>
+</dl></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="synthweave.utils" href="index.html">synthweave.utils</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="synthweave.utils.modules.L2NormalizationLayer" href="#synthweave.utils.modules.L2NormalizationLayer">L2NormalizationLayer</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.utils.modules.L2NormalizationLayer.forward" href="#synthweave.utils.modules.L2NormalizationLayer.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.utils.modules.LazyLinearXavier" href="#synthweave.utils.modules.LazyLinearXavier">LazyLinearXavier</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.utils.modules.LazyLinearXavier.reset_parameters" href="#synthweave.utils.modules.LazyLinearXavier.reset_parameters">reset_parameters</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.utils.modules.LazyProjectionMLP" href="#synthweave.utils.modules.LazyProjectionMLP">LazyProjectionMLP</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.utils.modules.LazyProjectionMLP.forward" href="#synthweave.utils.modules.LazyProjectionMLP.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.utils.modules.LinearXavier" href="#synthweave.utils.modules.LinearXavier">LinearXavier</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.utils.modules.LinearXavier.reset_parameters" href="#synthweave.utils.modules.LinearXavier.reset_parameters">reset_parameters</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.utils.modules.ProjectionMLP" href="#synthweave.utils.modules.ProjectionMLP">ProjectionMLP</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.utils.modules.ProjectionMLP.forward" href="#synthweave.utils.modules.ProjectionMLP.forward">forward</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>

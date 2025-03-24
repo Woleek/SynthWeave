@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>synthweave.fusion.mmd.modules API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>synthweave.fusion.mmd.modules</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="synthweave.fusion.mmd.modules.BiCroAttention"><code class="flex name class">
+<span>class <span class="ident">BiCroAttention</span></span>
+<span>(</span><span>modal_dim)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BiCroAttention(nn.Module):
+    &#34;&#34;&#34;Bi-Directional Cross-Attention (BiCroAtt) block.
+
+    Implements bi-directional cross-attention mechanism that allows each modality
+    to attend to features from all other modalities.
+
+    Attributes:
+        Wq: Query transformation matrix
+        Wk: Key transformation matrix
+        Wv: Value transformation matrix
+        scale: Scaling factor for dot products (1/sqrt(d_k))
+        softmax: Softmax layer for attention weights
+    &#34;&#34;&#34;
+
+    def __init__(self, modal_dim):
+        &#34;&#34;&#34;Initialize the BiCroAttention module.
+
+        Args:
+            modal_dim: Dimension of the input features
+        &#34;&#34;&#34;
+        super(BiCroAttention, self).__init__()
+        self.Wq = LinearXavier(modal_dim, modal_dim)
+        self.Wk = LinearXavier(modal_dim, modal_dim)
+        self.Wv = LinearXavier(modal_dim, modal_dim)
+        self.scale = 1 / (modal_dim**0.5)
+
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, P_i: torch.Tensor, *P_others: list[torch.Tensor]) -&gt; torch.Tensor:
+        &#34;&#34;&#34;Compute bi-directional cross-attention for the i-th modality.
+
+        Args:
+            P_i: Features from the i-th modality
+            *P_others: Features from all other modalities
+
+        Returns:
+            torch.Tensor: Cross-attended features concatenated across modalities
+
+        Process:
+            1. Compute query from current modality
+            2. For each other modality:
+                - Compute key and value projections
+                - Calculate cross-attention
+                - Apply attention to values
+            3. Concatenate attended features
+        &#34;&#34;&#34;
+        Qi = self.Wq(P_i)
+        Ki = self.Wk(P_i)
+        Vi = self.Wv(P_i)
+
+        attended_inputs = []
+        for P_j in P_others:  # Iterate over all other modalities
+            Qj = self.Wq(P_j)
+            Kj = self.Wk(P_j)
+            Vj = self.Wv(P_j)
+
+            attended_inputs.append(
+                self.softmax(torch.matmul(Qi, Kj.transpose(-2, -1)) * self.scale) @ Vj
+            )
+
+        return torch.cat(attended_inputs, dim=-1)</code></pre>
+</details>
+<div class="desc"><p>Bi-Directional Cross-Attention (BiCroAtt) block.</p>
+<p>Implements bi-directional cross-attention mechanism that allows each modality
+to attend to features from all other modalities.</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>Wq</code></strong></dt>
+<dd>Query transformation matrix</dd>
+<dt><strong><code>Wk</code></strong></dt>
+<dd>Key transformation matrix</dd>
+<dt><strong><code>Wv</code></strong></dt>
+<dd>Value transformation matrix</dd>
+<dt><strong><code>scale</code></strong></dt>
+<dd>Scaling factor for dot products (1/sqrt(d_k))</dd>
+<dt><strong><code>softmax</code></strong></dt>
+<dd>Softmax layer for attention weights</dd>
+</dl>
+<p>Initialize the BiCroAttention module.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>modal_dim</code></strong></dt>
+<dd>Dimension of the input features</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.fusion.mmd.modules.BiCroAttention.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, P_i: torch.Tensor, *P_others: list[torch.Tensor]) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, P_i: torch.Tensor, *P_others: list[torch.Tensor]) -&gt; torch.Tensor:
+    &#34;&#34;&#34;Compute bi-directional cross-attention for the i-th modality.
+
+    Args:
+        P_i: Features from the i-th modality
+        *P_others: Features from all other modalities
+
+    Returns:
+        torch.Tensor: Cross-attended features concatenated across modalities
+
+    Process:
+        1. Compute query from current modality
+        2. For each other modality:
+            - Compute key and value projections
+            - Calculate cross-attention
+            - Apply attention to values
+        3. Concatenate attended features
+    &#34;&#34;&#34;
+    Qi = self.Wq(P_i)
+    Ki = self.Wk(P_i)
+    Vi = self.Wv(P_i)
+
+    attended_inputs = []
+    for P_j in P_others:  # Iterate over all other modalities
+        Qj = self.Wq(P_j)
+        Kj = self.Wk(P_j)
+        Vj = self.Wv(P_j)
+
+        attended_inputs.append(
+            self.softmax(torch.matmul(Qi, Kj.transpose(-2, -1)) * self.scale) @ Vj
+        )
+
+    return torch.cat(attended_inputs, dim=-1)</code></pre>
+</details>
+<div class="desc"><p>Compute bi-directional cross-attention for the i-th modality.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>P_i</code></strong></dt>
+<dd>Features from the i-th modality</dd>
+<dt><strong><code>*P_others</code></strong></dt>
+<dd>Features from all other modalities</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Cross-attended features concatenated across modalities</dd>
+</dl>
+<h2 id="process">Process</h2>
+<ol>
+<li>Compute query from current modality</li>
+<li>For each other modality:<ul>
+<li>Compute key and value projections</li>
+<li>Calculate cross-attention</li>
+<li>Apply attention to values</li>
+</ul>
+</li>
+<li>Concatenate attended features</li>
+</ol></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.fusion.mmd.modules.FeedForward"><code class="flex name class">
+<span>class <span class="ident">FeedForward</span></span>
+<span>(</span><span>modal_dim, d_ff)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class FeedForward(nn.Module):
+    &#34;&#34;&#34;Feed-Forward (FF) sub-layer.
+
+    Implements a position-wise feed-forward network consisting of two linear
+    transformations with a ReLU activation in between.
+
+    Attributes:
+        linear1: First linear transformation
+        linear2: Second linear transformation
+        relu: ReLU activation function
+    &#34;&#34;&#34;
+
+    def __init__(self, modal_dim, d_ff):
+        &#34;&#34;&#34;Initialize the FeedForward module.
+
+        Args:
+            modal_dim: Dimension of input/output features
+            d_ff: Dimension of the inner layer
+        &#34;&#34;&#34;
+        super(FeedForward, self).__init__()
+        self.linear1 = LinearXavier(modal_dim, d_ff)
+        self.linear2 = LinearXavier(d_ff, modal_dim)
+
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        &#34;&#34;&#34;Forward pass of the feed-forward network.
+
+        Args:
+            x: Input tensor of shape (batch_size, seq_len, modal_dim)
+
+        Returns:
+            torch.Tensor: Transformed features of shape (batch_size, seq_len, modal_dim)
+        &#34;&#34;&#34;
+        return self.linear2(self.relu(self.linear1(x)))</code></pre>
+</details>
+<div class="desc"><p>Feed-Forward (FF) sub-layer.</p>
+<p>Implements a position-wise feed-forward network consisting of two linear
+transformations with a ReLU activation in between.</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>linear1</code></strong></dt>
+<dd>First linear transformation</dd>
+<dt><strong><code>linear2</code></strong></dt>
+<dd>Second linear transformation</dd>
+<dt><strong><code>relu</code></strong></dt>
+<dd>ReLU activation function</dd>
+</dl>
+<p>Initialize the FeedForward module.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>modal_dim</code></strong></dt>
+<dd>Dimension of input/output features</dd>
+<dt><strong><code>d_ff</code></strong></dt>
+<dd>Dimension of the inner layer</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.fusion.mmd.modules.FeedForward.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, x) ‑> Callable[..., Any]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, x):
+    &#34;&#34;&#34;Forward pass of the feed-forward network.
+
+    Args:
+        x: Input tensor of shape (batch_size, seq_len, modal_dim)
+
+    Returns:
+        torch.Tensor: Transformed features of shape (batch_size, seq_len, modal_dim)
+    &#34;&#34;&#34;
+    return self.linear2(self.relu(self.linear1(x)))</code></pre>
+</details>
+<div class="desc"><p>Forward pass of the feed-forward network.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>x</code></strong></dt>
+<dd>Input tensor of shape (batch_size, seq_len, modal_dim)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Transformed features of shape (batch_size, seq_len, modal_dim)</dd>
+</dl></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.fusion.mmd.modules.MMDBlock"><code class="flex name class">
+<span>class <span class="ident">MMDBlock</span></span>
+<span>(</span><span>modality_dim)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class MMDBlock(nn.Module):
+    &#34;&#34;&#34;Single block of the Multi-Modal Joint-Decoder (MMD).
+
+    Implements a complete MMD block containing BiCroAtt, SelfAtt, and FeedForward
+    sub-layers with residual connections and layer normalization.
+
+    Attributes:
+        bi_cro_att: Bi-directional cross-attention layer
+        self_att: Self-attention layer
+        ff: Feed-forward layer
+        ln1, ln2, ln3: Layer normalization layers
+    &#34;&#34;&#34;
+
+    def __init__(self, modality_dim) -&gt; None:
+        &#34;&#34;&#34;Initialize the MMDBlock.
+
+        Args:
+            modality_dim: Dimension of the input features
+        &#34;&#34;&#34;
+        super(MMDBlock, self).__init__()
+
+        self.bi_cro_att = BiCroAttention(modality_dim)
+        self.self_att = SelfAttention(modality_dim)
+        self.ff = FeedForward(modality_dim, modality_dim)
+
+        self.ln1 = nn.LayerNorm(modality_dim)
+        self.ln2 = nn.LayerNorm(modality_dim)
+        self.ln3 = nn.LayerNorm(modality_dim)
+
+    def forward(self, proj_embeds: list[torch.Tensor]) -&gt; list[torch.Tensor]:
+        &#34;&#34;&#34;Forward pass for a single MMDBlock.
+
+        Args:
+            proj_embeds: List of projected embeddings from each modality
+
+        Returns:
+            list[torch.Tensor]: List of refined embeddings for each modality
+
+        Process:
+            1. Apply BiCroAtt with residual connection and layer norm
+            2. Apply SelfAtt with residual connection and layer norm
+            3. Apply FeedForward with residual connection and layer norm
+        &#34;&#34;&#34;
+        attended_embeds = [
+            self.ln1(
+                proj_embeds[i]
+                + self.bi_cro_att(
+                    proj_embeds[i],
+                    *[proj_embeds[j] for j in range(len(proj_embeds)) if j != i],
+                )
+            )
+            for i in range(len(proj_embeds))
+        ]
+
+        refined_embeds = [
+            self.ln2(attended_embeds[i] + self.self_att(attended_embeds[i]))
+            for i in range(len(attended_embeds))
+        ]
+
+        refined_embeds = [
+            self.ln3(refined_embeds[i] + self.ff(refined_embeds[i]))
+            for i in range(len(refined_embeds))
+        ]
+
+        return refined_embeds</code></pre>
+</details>
+<div class="desc"><p>Single block of the Multi-Modal Joint-Decoder (MMD).</p>
+<p>Implements a complete MMD block containing BiCroAtt, SelfAtt, and FeedForward
+sub-layers with residual connections and layer normalization.</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>bi_cro_att</code></strong></dt>
+<dd>Bi-directional cross-attention layer</dd>
+<dt><strong><code>self_att</code></strong></dt>
+<dd>Self-attention layer</dd>
+<dt><strong><code>ff</code></strong></dt>
+<dd>Feed-forward layer</dd>
+</dl>
+<p>ln1, ln2, ln3: Layer normalization layers
+Initialize the MMDBlock.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>modality_dim</code></strong></dt>
+<dd>Dimension of the input features</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.fusion.mmd.modules.MMDBlock.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, proj_embeds: list[torch.Tensor]) ‑> list[torch.Tensor]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, proj_embeds: list[torch.Tensor]) -&gt; list[torch.Tensor]:
+    &#34;&#34;&#34;Forward pass for a single MMDBlock.
+
+    Args:
+        proj_embeds: List of projected embeddings from each modality
+
+    Returns:
+        list[torch.Tensor]: List of refined embeddings for each modality
+
+    Process:
+        1. Apply BiCroAtt with residual connection and layer norm
+        2. Apply SelfAtt with residual connection and layer norm
+        3. Apply FeedForward with residual connection and layer norm
+    &#34;&#34;&#34;
+    attended_embeds = [
+        self.ln1(
+            proj_embeds[i]
+            + self.bi_cro_att(
+                proj_embeds[i],
+                *[proj_embeds[j] for j in range(len(proj_embeds)) if j != i],
+            )
+        )
+        for i in range(len(proj_embeds))
+    ]
+
+    refined_embeds = [
+        self.ln2(attended_embeds[i] + self.self_att(attended_embeds[i]))
+        for i in range(len(attended_embeds))
+    ]
+
+    refined_embeds = [
+        self.ln3(refined_embeds[i] + self.ff(refined_embeds[i]))
+        for i in range(len(refined_embeds))
+    ]
+
+    return refined_embeds</code></pre>
+</details>
+<div class="desc"><p>Forward pass for a single MMDBlock.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>proj_embeds</code></strong></dt>
+<dd>List of projected embeddings from each modality</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>list[torch.Tensor]</code></dt>
+<dd>List of refined embeddings for each modality</dd>
+</dl>
+<h2 id="process">Process</h2>
+<ol>
+<li>Apply BiCroAtt with residual connection and layer norm</li>
+<li>Apply SelfAtt with residual connection and layer norm</li>
+<li>Apply FeedForward with residual connection and layer norm</li>
+</ol></div>
+</dd>
+</dl>
+</dd>
+<dt id="synthweave.fusion.mmd.modules.SelfAttention"><code class="flex name class">
+<span>class <span class="ident">SelfAttention</span></span>
+<span>(</span><span>modal_dim)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SelfAttention(nn.Module):
+    &#34;&#34;&#34;Self-Attention (SelfAtt) sub-layer.
+
+    Implements scaled dot-product self-attention mechanism that allows each position
+    in the input sequence to attend to all positions in the same sequence.
+
+    Attributes:
+        Wq: Query transformation matrix
+        Wk: Key transformation matrix
+        Wv: Value transformation matrix
+        scale: Scaling factor for dot products (1/sqrt(d_k))
+        softmax: Softmax layer for attention weights
+    &#34;&#34;&#34;
+
+    def __init__(self, modal_dim):
+        &#34;&#34;&#34;Initialize the SelfAttention module.
+
+        Args:
+            modal_dim: Dimension of the input features
+        &#34;&#34;&#34;
+        super(SelfAttention, self).__init__()
+        self.Wq = LinearXavier(modal_dim, modal_dim)
+        self.Wk = LinearXavier(modal_dim, modal_dim)
+        self.Wv = LinearXavier(modal_dim, modal_dim)
+        self.scale = 1 / (modal_dim**0.5)
+
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, Z):
+        &#34;&#34;&#34;Forward pass of the self-attention mechanism.
+
+        Args:
+            Z: Input tensor of shape (batch_size, seq_len, modal_dim)
+
+        Returns:
+            torch.Tensor: Attended features of shape (batch_size, seq_len, modal_dim)
+
+        Process:
+            1. Compute query, key, and value projections
+            2. Calculate scaled dot-product attention
+            3. Apply softmax to get attention weights
+            4. Compute weighted sum of values
+        &#34;&#34;&#34;
+        Q = self.Wq(Z)
+        K = self.Wk(Z)
+        V = self.Wv(Z)
+        Z_hat = self.softmax(torch.matmul(Q, K.transpose(-2, -1)) * self.scale) @ V
+        return Z_hat</code></pre>
+</details>
+<div class="desc"><p>Self-Attention (SelfAtt) sub-layer.</p>
+<p>Implements scaled dot-product self-attention mechanism that allows each position
+in the input sequence to attend to all positions in the same sequence.</p>
+<h2 id="attributes">Attributes</h2>
+<dl>
+<dt><strong><code>Wq</code></strong></dt>
+<dd>Query transformation matrix</dd>
+<dt><strong><code>Wk</code></strong></dt>
+<dd>Key transformation matrix</dd>
+<dt><strong><code>Wv</code></strong></dt>
+<dd>Value transformation matrix</dd>
+<dt><strong><code>scale</code></strong></dt>
+<dd>Scaling factor for dot products (1/sqrt(d_k))</dd>
+<dt><strong><code>softmax</code></strong></dt>
+<dd>Softmax layer for attention weights</dd>
+</dl>
+<p>Initialize the SelfAttention module.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>modal_dim</code></strong></dt>
+<dd>Dimension of the input features</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.nn.modules.module.Module</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="synthweave.fusion.mmd.modules.SelfAttention.forward"><code class="name flex">
+<span>def <span class="ident">forward</span></span>(<span>self, Z) ‑> Callable[..., Any]</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def forward(self, Z):
+    &#34;&#34;&#34;Forward pass of the self-attention mechanism.
+
+    Args:
+        Z: Input tensor of shape (batch_size, seq_len, modal_dim)
+
+    Returns:
+        torch.Tensor: Attended features of shape (batch_size, seq_len, modal_dim)
+
+    Process:
+        1. Compute query, key, and value projections
+        2. Calculate scaled dot-product attention
+        3. Apply softmax to get attention weights
+        4. Compute weighted sum of values
+    &#34;&#34;&#34;
+    Q = self.Wq(Z)
+    K = self.Wk(Z)
+    V = self.Wv(Z)
+    Z_hat = self.softmax(torch.matmul(Q, K.transpose(-2, -1)) * self.scale) @ V
+    return Z_hat</code></pre>
+</details>
+<div class="desc"><p>Forward pass of the self-attention mechanism.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>Z</code></strong></dt>
+<dd>Input tensor of shape (batch_size, seq_len, modal_dim)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>torch.Tensor</code></dt>
+<dd>Attended features of shape (batch_size, seq_len, modal_dim)</dd>
+</dl>
+<h2 id="process">Process</h2>
+<ol>
+<li>Compute query, key, and value projections</li>
+<li>Calculate scaled dot-product attention</li>
+<li>Apply softmax to get attention weights</li>
+<li>Compute weighted sum of values</li>
+</ol></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="synthweave.fusion.mmd" href="index.html">synthweave.fusion.mmd</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="synthweave.fusion.mmd.modules.BiCroAttention" href="#synthweave.fusion.mmd.modules.BiCroAttention">BiCroAttention</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.fusion.mmd.modules.BiCroAttention.forward" href="#synthweave.fusion.mmd.modules.BiCroAttention.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.fusion.mmd.modules.FeedForward" href="#synthweave.fusion.mmd.modules.FeedForward">FeedForward</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.fusion.mmd.modules.FeedForward.forward" href="#synthweave.fusion.mmd.modules.FeedForward.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.fusion.mmd.modules.MMDBlock" href="#synthweave.fusion.mmd.modules.MMDBlock">MMDBlock</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.fusion.mmd.modules.MMDBlock.forward" href="#synthweave.fusion.mmd.modules.MMDBlock.forward">forward</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="synthweave.fusion.mmd.modules.SelfAttention" href="#synthweave.fusion.mmd.modules.SelfAttention">SelfAttention</a></code></h4>
+<ul class="">
+<li><code><a title="synthweave.fusion.mmd.modules.SelfAttention.forward" href="#synthweave.fusion.mmd.modules.SelfAttention.forward">forward</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>
