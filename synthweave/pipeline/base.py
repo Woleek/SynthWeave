@@ -34,7 +34,7 @@ class BasePipeline(nn.Module):
     def __init__(
         self,
         models: Mapping[str, nn.Module],
-        fusion: Union[BaseFusion, str],
+        fusion: BaseFusion,
         head: Optional[nn.Module] = None,
         processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
         freeze_backbone: bool = True,

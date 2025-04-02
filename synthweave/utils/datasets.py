@@ -1,5 +1,7 @@
+from collections import defaultdict
 import os
-from typing import Literal
+from typing import Callable, Literal, Optional
+import torch
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
 from datasets import load_dataset, ClassLabel
@@ -81,12 +83,19 @@ class LAV_DF_DataModule(LightningDataModule):
 class DeepSpeak_v1_Dataset(Dataset):
     def __init__(
         self,
-        split: Literal["train", "dev", "test"]
+        split: Literal["train", "dev", "test"],
+        video_processor: Optional[Callable] = None,
+        audio_processor: Optional[Callable] = None,
+        mode: Literal['minimal', 'full'] = 'minimal'
     ):
         super().__init__()
         
+        self.mode = mode
         self.split = split
         self._prepare_dataset(split)
+        
+        self.video_processor = video_processor
+        self.audio_processor = audio_processor
             
     def _prepare_dataset(self, split: str):
         if split == "test":
@@ -109,6 +118,42 @@ class DeepSpeak_v1_Dataset(Dataset):
     def __len__(self):
         return len(self.dataset)
     
+    def _extract_minimal_metadata(self, meta: dict) -> dict:
+        video_type = meta.get("type")
+        
+        if video_type == "fake":
+            label = '1'
+
+            # Determine AV label
+            if meta.get('kind') == "face-swap":
+                av = '01'
+            elif meta.get('kind') == "lip-sync":
+                if meta.get('recording-target-ai-generated') == True:
+                    av = '11'
+                else:
+                    av = '10'
+
+            # Extract identity info
+            id_source = meta.get("identity-source")
+            id_target = meta.get("identity-target")
+
+        elif video_type == "real":
+            label = '0'
+
+            # Real audio & real video
+            av = '00'
+
+            # Extract identity
+            id_source = meta.get("identity")
+            id_target = id_source
+            
+        return {
+            "label": label,
+            "av": av,
+            "id_source": id_source, # Identify of the person who created the video
+            "id_target": id_target  # Identity of the person who appears in the video
+        }   
+        
     def __getitem__(self, idx: int) -> dict:
         sample = self.dataset[idx]
         video, audio, info = read_video(sample['video-file'])
@@ -117,6 +162,23 @@ class DeepSpeak_v1_Dataset(Dataset):
         meta['type'] = type
         meta['file'] = sample['video-file']
         meta.update(info)
+        
+        if self.video_processor:
+            vid_fps = meta['video_fps']
+            video = self.video_processor(video, vid_fps)
+            
+        if self.audio_processor:
+            aud_sr = meta['audio_fps']
+            audio = self.audio_processor(audio, aud_sr)
+        
+        if self.audio_processor and self.video_processor:
+            # ensure same number of windows for video and audio
+            min_len = min(video.shape[0], audio.shape[0])
+            video = video[:min_len]
+            audio = audio[:min_len]
+            
+        if self.mode == 'minimal':
+            meta = self._extract_minimal_metadata(meta)
         
         return {
             "video": video,
@@ -128,29 +190,133 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
     def __init__(
         self,
         batch_size: int = 32,
-        num_workers: int = 0
+        num_workers: int = 0,
+        sample_mode: Literal['single', 'sequence'] = 'single', 
+        dataset_kwargs: dict = {},
+        
+        # BATCH BALANCING
+        clip_mode: Optional[Literal['id', 'idx']] = None,
+        clip_to: Optional[Literal['min'] | int] = None, # 'max' if padding will be added
+        # pad_mode: Optional[Literal['repeat', 'zeros']] = None
     ):
         super().__init__()
         
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.dataset_kwargs = dataset_kwargs
+        self.sample_mode = sample_mode
+        
+        self.clip_to = clip_to
+        self.clip_mode = clip_mode
         
     def setup(self, stage: str = None):
         if stage == "fit" or stage is None:
-            self.train_dataset = DeepSpeak_v1_Dataset("train")
-            self.val_dataset = DeepSpeak_v1_Dataset("dev")
+            self.train_dataset = DeepSpeak_v1_Dataset("train", **self.dataset_kwargs)
+            self.val_dataset = DeepSpeak_v1_Dataset("dev", **self.dataset_kwargs)
             
         if stage == "test" or stage is None:
-            self.test_dataset = DeepSpeak_v1_Dataset("test")
+            self.test_dataset = DeepSpeak_v1_Dataset("test", **self.dataset_kwargs)
+            
+    def _collate_fn(self, batch: list) -> dict:
+        # 1. Single mode - each window is a separate sample
+        # NOTE: Need to ensure that some ID wont dominate batch - e.g. when some videos are much longer than others
+        # TRY 1: set max number of samples per ID/video
+        # TRY 2: clip to min number of samples per ID/video in current batch
+        
+        if self.sample_mode == 'single':
+            
+            if self.clip_mode == 'id': # Balance by ID
+                batch_vid = defaultdict(list)
+                batch_aud = defaultdict(list)
+                metas = defaultdict(list)
+
+                for idx, sample in enumerate(batch):
+                    vid_windows = sample["video"]
+                    aud_windows = sample["audio"]
+                    meta = sample["metadata"]
+
+                    # store metadata, video and audio windows per ID (source) in batch
+                    batch_vid[meta['id_source']].extend(vid_windows)
+                    batch_aud[meta['id_source']].extend(aud_windows)
+                    metas[meta['id_source']].extend([meta for _ in range(len(vid_windows))])
+                    
+                if self.clip_to == 'min': # Clip to min number of samples per ID in batch
+                    clip_val = min([len(windows) for windows in batch_vid.values()])
+                elif isinstance(self.clip_to, int): # Clip to specific number of samples per ID in batch
+                    clip_val = self.clip_to
+                else:
+                    raise ValueError(f"Clipping selected but the mode is invalid: {self.clip_to}")
+
+                for id, windows in batch_vid.items():
+                    batch_vid[id] = windows[:clip_val]
+                    batch_aud[id] = batch_aud[id][:clip_val]
+                    metas[id] = metas[id][:clip_val]
+                    
+            elif self.clip_mode == 'idx': # Balance by sample index
+                batch_vid = defaultdict(list)
+                batch_aud = defaultdict(list)
+                metas = defaultdict(list)
+                
+                for idx, sample in enumerate(batch):
+                    vid_windows = sample["video"]
+                    aud_windows = sample["audio"]
+                    meta = sample["metadata"]
+                    
+                    # store metadata, video and audio windows per sample index in batch
+                    batch_vid[idx].extend(vid_windows)
+                    batch_aud[idx].extend(aud_windows)
+                    metas[idx].extend([meta for _ in range(len(vid_windows))])
+                    
+                if self.clip_to == 'min': # Clip to min number of samples per sample index in batch
+                    clip_val = min([len(windows) for windows in batch_vid.values()])
+                elif isinstance(self.clip_to, int): # Clip to specific number of samples per sample index in batch
+                    clip_val = self.clip_to
+                else:
+                    raise ValueError(f"Clipping selected but the mode is invalid: {self.clip_to}")
+                
+                for idx, windows in batch_vid.items():
+                    batch_vid[idx] = windows[:clip_val]
+                    batch_aud[idx] = batch_aud[idx][:clip_val]
+                    metas[idx] = metas[idx][:clip_val]
+                    
+            else: # No balancing
+                batch_vid = defaultdict(list)
+                batch_aud = defaultdict(list)
+                metas = defaultdict(list)
+                
+                for idx, sample in enumerate(batch):
+                    vid_windows = sample["video"]
+                    aud_windows = sample["audio"]
+                    meta = sample["metadata"]
+                    
+                    batch_vid['default'].extend(vid_windows)
+                    batch_aud['default'].extend(aud_windows)
+                    metas['default'].extend([meta for _ in range(len(vid_windows))])
+                    
+            videos = torch.cat([torch.stack(windows, dim=0) for windows in batch_vid.values()], dim=0)
+            audios = torch.cat([torch.stack(windows, dim=0) for windows in batch_aud.values()], dim=0)
+            metas = [meta for metas in metas.values() for meta in metas]
+            
+        # 2. Sequence mode - each sequence of windows from the same video is a separate sample
+        # NOTE: Need to handle various lenghts of sequences 
+        # TRY 1: clip/pad to min/max length with repeat/zeros (can cause issues with methods analyzing transitions)
+        elif self.sample_mode == 'sequence':
+            raise NotImplementedError("Sequence mode not implemented yet")
+        
+        return {
+            "video": videos,
+            "audio": audios,
+            "metadata": metas
+        }
             
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, collate_fn=self._collate_fn)
     
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, collate_fn=self._collate_fn)
     
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers)
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, collate_fn=self._collate_fn)
     
     
 # =============================================================================
