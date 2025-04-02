@@ -1,10 +1,13 @@
 from collections import defaultdict
+import numbers
 import os
 from typing import Callable, Literal, Optional
+import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
 from datasets import load_dataset, ClassLabel
+from sklearn.preprocessing import LabelEncoder
 
 from synthweave.utils.tools import read_json, read_video
 
@@ -96,6 +99,18 @@ class DeepSpeak_v1_Dataset(Dataset):
         
         self.video_processor = video_processor
         self.audio_processor = audio_processor
+        
+        if self.mode == 'minimal':
+            self._prepare_label_encoders()
+            
+    def _prepare_label_encoders(self):
+        self.encoders = {
+            "label": LabelEncoder(),
+            "av": LabelEncoder()
+        }
+        
+        self.encoders["label"].fit(['0', '1'])
+        self.encoders["av"].fit(['00', '01', '10', '11'])
             
     def _prepare_dataset(self, split: str):
         if split == "test":
@@ -147,6 +162,10 @@ class DeepSpeak_v1_Dataset(Dataset):
             id_source = meta.get("identity")
             id_target = id_source
             
+        # encode labels
+        label = self.encoders["label"].transform([label])[0]
+        av = self.encoders["av"].transform([av])[0]
+            
         return {
             "label": label,
             "av": av,
@@ -193,10 +212,12 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
         num_workers: int = 0,
         sample_mode: Literal['single', 'sequence'] = 'single', 
         dataset_kwargs: dict = {},
+        encode_ids: bool = True,
         
         # BATCH BALANCING
         clip_mode: Optional[Literal['id', 'idx']] = None,
-        clip_to: Optional[Literal['min'] | int] = None, # 'max' if padding will be added
+        clip_to: Literal['min'] | int = 'min', # 'max' if padding will be added
+        clip_selector: Literal['first', 'random'] = 'first',
         # pad_mode: Optional[Literal['repeat', 'zeros']] = None
     ):
         super().__init__()
@@ -205,9 +226,13 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
         self.num_workers = num_workers
         self.dataset_kwargs = dataset_kwargs
         self.sample_mode = sample_mode
+        self.encode_ids = encode_ids
+        if self.encode_ids:
+            self.id_encoder = LabelEncoder()
         
         self.clip_to = clip_to
         self.clip_mode = clip_mode
+        self.clip_selector = clip_selector
         
     def setup(self, stage: str = None):
         if stage == "fit" or stage is None:
@@ -228,7 +253,7 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
             if self.clip_mode == 'id': # Balance by ID
                 batch_vid = defaultdict(list)
                 batch_aud = defaultdict(list)
-                metas = defaultdict(list)
+                batch_metas = defaultdict(list)
 
                 for idx, sample in enumerate(batch):
                     vid_windows = sample["video"]
@@ -238,7 +263,7 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
                     # store metadata, video and audio windows per ID (source) in batch
                     batch_vid[meta['id_source']].extend(vid_windows)
                     batch_aud[meta['id_source']].extend(aud_windows)
-                    metas[meta['id_source']].extend([meta for _ in range(len(vid_windows))])
+                    batch_metas[meta['id_source']].extend([meta for _ in range(len(vid_windows))])
                     
                 if self.clip_to == 'min': # Clip to min number of samples per ID in batch
                     clip_val = min([len(windows) for windows in batch_vid.values()])
@@ -250,12 +275,12 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
                 for id, windows in batch_vid.items():
                     batch_vid[id] = windows[:clip_val]
                     batch_aud[id] = batch_aud[id][:clip_val]
-                    metas[id] = metas[id][:clip_val]
+                    batch_metas[id] = batch_metas[id][:clip_val]
                     
             elif self.clip_mode == 'idx': # Balance by sample index
                 batch_vid = defaultdict(list)
                 batch_aud = defaultdict(list)
-                metas = defaultdict(list)
+                batch_metas = defaultdict(list)
                 
                 for idx, sample in enumerate(batch):
                     vid_windows = sample["video"]
@@ -265,7 +290,7 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
                     # store metadata, video and audio windows per sample index in batch
                     batch_vid[idx].extend(vid_windows)
                     batch_aud[idx].extend(aud_windows)
-                    metas[idx].extend([meta for _ in range(len(vid_windows))])
+                    batch_metas[idx].extend([meta for _ in range(len(vid_windows))])
                     
                 if self.clip_to == 'min': # Clip to min number of samples per sample index in batch
                     clip_val = min([len(windows) for windows in batch_vid.values()])
@@ -275,14 +300,21 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
                     raise ValueError(f"Clipping selected but the mode is invalid: {self.clip_to}")
                 
                 for idx, windows in batch_vid.items():
-                    batch_vid[idx] = windows[:clip_val]
-                    batch_aud[idx] = batch_aud[idx][:clip_val]
-                    metas[idx] = metas[idx][:clip_val]
+                    if self.clip_selector == 'first':
+                        batch_vid[idx] = windows[:clip_val]
+                        batch_aud[idx] = batch_aud[idx][:clip_val]
+                        batch_metas[idx] = batch_metas[idx][:clip_val]
+                    elif self.clip_selector == 'random':
+                        selected_idx = np.random.choice(len(windows), clip_val, replace=False)
+                        selected_idx.sort()
+                        batch_vid[idx] = [windows[i] for i in selected_idx]
+                        batch_aud[idx] = [batch_aud[idx][i] for i in selected_idx]
+                        batch_metas[idx] = [batch_metas[idx][i] for i in selected_idx]
                     
             else: # No balancing
                 batch_vid = defaultdict(list)
                 batch_aud = defaultdict(list)
-                metas = defaultdict(list)
+                batch_metas = defaultdict(list)
                 
                 for idx, sample in enumerate(batch):
                     vid_windows = sample["video"]
@@ -291,17 +323,40 @@ class DeepSpeak_v1_DataModule(LightningDataModule):
                     
                     batch_vid['default'].extend(vid_windows)
                     batch_aud['default'].extend(aud_windows)
-                    metas['default'].extend([meta for _ in range(len(vid_windows))])
+                    batch_metas['default'].extend([meta for _ in range(len(vid_windows))])
                     
             videos = torch.cat([torch.stack(windows, dim=0) for windows in batch_vid.values()], dim=0)
             audios = torch.cat([torch.stack(windows, dim=0) for windows in batch_aud.values()], dim=0)
-            metas = [meta for metas in metas.values() for meta in metas]
+            flat_metas = [meta for meta_list in batch_metas.values() for meta in meta_list]
+            metas = {k: [meta[k] for meta in flat_metas] for k in flat_metas[0]}
             
         # 2. Sequence mode - each sequence of windows from the same video is a separate sample
         # NOTE: Need to handle various lenghts of sequences 
         # TRY 1: clip/pad to min/max length with repeat/zeros (can cause issues with methods analyzing transitions)
         elif self.sample_mode == 'sequence':
             raise NotImplementedError("Sequence mode not implemented yet")
+        
+        else:
+            raise ValueError(f"Invalid sample mode: {self.sample_mode}")
+        
+        if self.encode_ids:
+            ids = metas['id_source'] + metas['id_target']
+            self.id_encoder.fit(ids)
+            
+            metas['id_source'] = self.id_encoder.transform(metas['id_source'])
+            metas['id_target'] = self.id_encoder.transform(metas['id_target'])
+            
+            # reset encoder to avoid encoding errors
+            self.id_encoder = LabelEncoder()
+            
+        # tensorize metadata where possible
+        for k, v_list in metas.items():
+            if isinstance(v_list[0], (int, np.integer, numbers.Integral)):
+                metas[k] = torch.as_tensor(v_list, dtype=torch.long)
+            elif isinstance(v_list[0], (float, np.floating, numbers.Real)):
+                metas[k] = torch.as_tensor(v_list, dtype=torch.float)
+            else:
+                metas[k] = v_list
         
         return {
             "video": videos,
