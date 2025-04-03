@@ -215,9 +215,27 @@ class MultiModalAuthPipeline(BasePipeline):
         self,
         models: Mapping[str, nn.Module],
         fusion: BaseFusion,
-        detection_head: nn.Module,
-        processors: Mapping[str, Callable[..., torch.Tensor]],
+        detection_head: Optional[nn.Module] = None,
+        processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
+        
         freeze_backbone: bool = True,
-        window_length: int = 4,
     ):
         super(MultiModalAuthPipeline, self).__init__(models, fusion, detection_head, processors, freeze_backbone)
+        
+    def forward(self, inputs: Dict[str, Any]) -> torch.Tensor:
+        outs = super().forward(inputs, output_feats=True)
+        return outs
+    
+    def verify(self, inputs: Dict[str, Any]) -> torch.Tensor:
+        similarities = {}
+        
+        for modality in self.fusion.modalities:
+            embedding = inputs[modality]
+            refference = inputs[modality+'_ref']
+            
+            sim = self.feature_extractors[modality].compute_similarities(embedding, refference)
+            similarities[modality] = sim
+            
+        return similarities
+            
+            

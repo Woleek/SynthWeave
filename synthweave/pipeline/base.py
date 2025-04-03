@@ -57,7 +57,7 @@ class BasePipeline(nn.Module):
         self.head = head
         self.processors = processors
 
-    def __call__(self, inputs: Dict[str, Any]) -> torch.Tensor:
+    def __call__(self, inputs: Dict[str, Any], **kwargs) -> torch.Tensor:
         """Forward pass alias.
 
         Args:
@@ -66,7 +66,7 @@ class BasePipeline(nn.Module):
         Returns:
             torch.Tensor: Pipeline outputs
         """
-        return self.forward(inputs)
+        return self.forward(inputs, **kwargs)
 
     # def to(self, device: torch.device) -> 'BasePipeline':
     #     """
