@@ -1,19 +1,39 @@
 import torch
 import torch.nn as nn
-from typing import Any, Dict, Optional, Callable, Tuple, Union, Mapping, List
+from typing import Any, Dict, Optional, Callable, Tuple, Mapping
+from torchvision import transforms
+import os
+import torchaudio
+import onnxruntime
+from facenet_pytorch import MTCNN
+import numpy as np
 
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
 
-import torch
-from torchvision import transforms
-import torchaudio
-from facenet_pytorch import MTCNN
-import numpy as np
-from insightface.app import FaceAnalysis
-from insightface.model_zoo import get_model
-import numpy as np
-import torch.nn as nn
+class HeadPose:
+    def __init__(self, dirpath):
+        self.model_paths = [os.path.join(dirpath, "fsanet-1x1-iter-688590.onnx"), os.path.join(dirpath, "fsanet-var-iter-688590.onnx")]
+        self.models = [onnxruntime.InferenceSession(model_path) for model_path in self.model_paths]
+    
+    def __call__(self, image):
+        image = image.permute(2, 0, 1).float() # HWC to CHW
+        image = self.transform(image)
+        image = image / 255.0
+        image = image.unsqueeze(0).numpy()
+        yaw_pitch_roll_results = [
+            model.run(["output"], {"input": image})[0] for model in self.models
+        ]
+        yaw, pitch, roll = np.mean(np.vstack(yaw_pitch_roll_results), axis=0)
+        return yaw, pitch, roll
+    
+    def transform(self, image):
+        trans = transforms.Compose([
+            transforms.Resize((64,64)),
+            transforms.Normalize(mean=127.5,std=128.0)
+        ])
+        image = trans(image)
+        return image 
 
 class ImagePreprocessor:
     def __init__(
@@ -21,12 +41,15 @@ class ImagePreprocessor:
         window_len: int = 4, 
         step: int = 1, 
         crop_face: bool = True,
+        estimate_head_pose: bool = True,
+        head_pose_dir: str = None,
         pad_mode: str = 'repeat', # 'repeat' or 'zeros'
         device: str = 'cuda'
     ):
         self.window_len = window_len
         self.step = step
         self.crop_face = crop_face
+        self.estimate_head_pose = estimate_head_pose
         self.pad_mode = pad_mode
         self.device = device
         
@@ -38,6 +61,9 @@ class ImagePreprocessor:
                 keep_all=False, 
                 device=device
             )
+            
+        if estimate_head_pose:
+            self.head_pose_estimator = HeadPose(head_pose_dir)
             
         self.transform = transforms.Compose([
             transforms.Lambda(lambda x: x.float())
@@ -51,6 +77,55 @@ class ImagePreprocessor:
         # Returns a cropped face if detected, otherwise None.
         face_crop = self.face_detector(frame)
         return face_crop
+    
+    def _get_face_with_fallback(self, frame: np.ndarray, window: list, idx: int) -> np.ndarray:
+        face = self._crop_face(frame)
+        if face is not None:
+            return face, True
+        
+        # 1. try to find a frontal frame
+        if self.estimate_head_pose:
+            next_idx = idx + 1
+            while next_idx < len(window):
+                
+                relative_frontal_idx  = self._select_frontal_frame(window[next_idx:]) # return relative index
+                if relative_frontal_idx is None: # No more frames
+                    break
+                
+                frontal_idx = next_idx + relative_frontal_idx
+                
+                fallback_frame = window[frontal_idx].numpy()
+                face = self._crop_face(fallback_frame)
+                
+                if face is not None:
+                    return face, True
+            
+                next_idx = frontal_idx + 1 # continue searching from last found index
+
+        # 2. If estimate_head_pose is False, try a naive approach over all frames in window (except the original idx)
+        else:
+            for i, frame in enumerate(window):
+                if i == idx:
+                    continue  # already checked
+                candidate = self._crop_face(frame.numpy())
+                if candidate is not None:
+                    return candidate, True
+
+        # 3. If we exhaust all fallback options, return a failure
+        return None, False
+    
+    def _check_frontal_face(self, image):
+        yaw, pitch, roll = self.head_pose_estimator(image)
+        return abs(yaw) < 30 and abs(pitch) < 30 and abs(roll) < 30
+
+
+    def _select_frontal_frame(self, frames: list):
+        # Returns the first frame with a frontal face
+        for idx, frame in enumerate(frames):
+            if self._check_frontal_face(frame):
+                return idx
+        else:
+            return None # No frontal face found
     
     # def _pad_window(self, window: torch.Tensor, target_length: int) -> torch.Tensor:
     #     T = window.shape[0]
@@ -72,7 +147,7 @@ class ImagePreprocessor:
             
     #     return window
         
-    def _process_video(self, video_input: torch.Tensor, fps: float) -> torch.Tensor:
+    def _process_video(self, video_input: torch.Tensor, fps: float) -> Tuple[torch.Tensor, torch.Tensor]:
         # video_input: Tensor of shape (T, H, W, C) in uint8.
         fps = int(fps)
         num_frames = video_input.shape[0]
@@ -89,26 +164,47 @@ class ImagePreprocessor:
             windows = [video_input[i:i+frames_per_window] for i in range(0, num_frames, step_frames)]
         
         frames = []
+        valid_mask = []
         for idx, window in enumerate(windows):
-            # select middle frame 
-            # TODO: Replace with most frontal face frame
-            frame = window[len(window) // 2].numpy()
+            is_valid = True
+            # select frontal frame
+            if self.estimate_head_pose:
+                idx = self._select_frontal_frame(window)
+                
+                if idx is None:
+                    frame = torch.zeros((3, 112, 112), dtype=torch.float32) # empty face
+                    frames.append(frame)
+                    valid_mask.append(False)
+            else:
+                idx = len(window) // 2
+                
+            frame = window[idx].numpy()
             
             # crop face
             if self.crop_face:
-                face = self._crop_face(frame)
-                if face is None:
-                    print(f"No face detected in window {idx}. Skipping...")
-                    continue
+                cropped_face, found = self._get_face_with_fallback(frame, window, idx)
+                
+                if found:
+                    frame = cropped_face
                 else:
-                    frame = face
+                    frame = torch.zeros((3, 112, 112), dtype=torch.float32) # empty face
+                    is_valid = False
               
             # apply transform  
-            frame = self.transform(frame)
-            frame = frame / 255.0
+            if is_valid:
+                frame = self.transform(frame)
+                frame = frame / 255.0
+                
             frames.append(frame)
-            
-        return torch.stack(frames, dim=0)
+                
+            # mask for valid frames
+            if is_valid:
+                valid_mask.append(True)
+            else:
+                valid_mask.append(False)
+                
+        # tensor output and validity mask
+        return torch.stack(frames, dim=0), torch.tensor(valid_mask, dtype=torch.bool)
     
     
 class AudioPreprocessor():
@@ -148,10 +244,9 @@ class AudioPreprocessor():
         
         return audio
     
-    def _process_audio(self, audio_input: torch.Tensor, sr: int) -> torch.Tensor:
+    def _process_audio(self, audio_input: torch.Tensor, sr: int) -> Tuple[torch.Tensor, torch.Tensor]:
         if audio_input.numel() == 0:
-            print("No audio detected. Skipping...")
-            return None
+            raise ValueError("No audio detected")
         
         # resample audio
         if sr != self.sample_rate:
@@ -196,7 +291,8 @@ class AudioPreprocessor():
         if audios.dim() == 2:
             audios = audios.unsqueeze(1) # add channel dimension
         
-        return audios
+        valid_mask = torch.ones(audios.shape[0], dtype=torch.bool) # valid mask for all windows
+        return audios, valid_mask
             
 
 class MultiModalAuthPipeline(BasePipeline):
