@@ -4,12 +4,12 @@ import torchaudio
 
 
 def read_json(path: str):
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         return json.load(f)
-    
-    
+
+
 def read_video(path: str):
-    video, audio, info = torchvision.io.read_video(path, pts_unit='sec')
+    video, audio, info = torchvision.io.read_video(path, pts_unit="sec")
     return video, audio, info
 
 

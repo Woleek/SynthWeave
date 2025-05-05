@@ -2,7 +2,7 @@ import logging
 
 # Create a logger for the library
 logger = logging.getLogger("SynthWeave")
-logger.setLevel(logging.DEBUG) # Default logging level for the library
+logger.setLevel(logging.DEBUG)  # Default logging level for the library
 
 # Create a default handler
 default_handler = logging.StreamHandler()

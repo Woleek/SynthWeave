@@ -277,7 +277,7 @@ class CAFF(BaseFusion):
                 (
                     f"{key1}_{key2}",
                     nn.MultiheadAttention(
-                        embed_dim=output_dim,
+                        embed_dim=self.proj_dim,
                         num_heads=num_att_heads,
                         dropout=dropout,
                         batch_first=True,
@@ -291,7 +291,7 @@ class CAFF(BaseFusion):
 
         # Aggregation layer
         self.aggregation_layer = LinearXavier(
-            output_dim * len(modality_keys), output_dim, bias
+            self.proj_dim * len(modality_keys), output_dim, bias
         )
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
