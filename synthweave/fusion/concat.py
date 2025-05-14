@@ -37,7 +37,7 @@ class CFF(BaseFusion):
         modality_keys: List[str],
         input_dims: Optional[Dict[str, int]] = None,
         bias: bool = True,
-        dropout: float = 0.5,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
         hidden_proj_dim: Optional[int] = None,
         out_proj_dim: Optional[int] = None,
@@ -51,7 +51,7 @@ class CFF(BaseFusion):
             modality_keys: List of modality names to be fused
             input_dims: Dictionary mapping modality names to their input dimensions
             bias: Whether to include bias in linear layers
-            dropout: Dropout probability
+            dropout_p: Dropout probability
             unify_embeds: Whether to project all modalities to same dimension
             hidden_proj_dim: Hidden dimension for projection layers
             out_proj_dim: Output dimension for projection layers
@@ -59,10 +59,11 @@ class CFF(BaseFusion):
             **kwargs: Additional arguments passed to parent class
         """
         super(CFF, self).__init__(
+            output_dim,
             modality_keys,
             input_dims,
             bias,
-            dropout,
+            dropout_p,
             unify_embeds,
             hidden_proj_dim,
             out_proj_dim,
@@ -91,10 +92,10 @@ class CFF(BaseFusion):
         """
         # Concatenate embeddings
         concat_embeds = torch.cat(
-            list(embeddings.values()), dim=-1
-        )  # (batch_size, n_modals * embed_dim)
+            [embeddings[k] for k in self.modalities], dim=-1
+        )  # (B, M * EMB)
 
         # Process concatenated features
-        fusion_vector = self.fc_layer(concat_embeds)  # (batch_size, output_dim)
+        fusion_vector = self.fc_layer(concat_embeds)  # (B, EMB)
 
         return fusion_vector

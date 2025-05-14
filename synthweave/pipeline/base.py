@@ -68,16 +68,6 @@ class BasePipeline(nn.Module):
         """
         return self.forward(inputs, **kwargs)
 
-    # def to(self, device: torch.device) -> 'BasePipeline':
-    #     """
-    #     Override the to method to move all models to the new device.
-    #     """
-    #     self.feature_extractors = self.feature_extractors.to(device)
-    #     self.fusion = self.fusion.to(device)
-    #     if self.head is not None:
-    #         self.head = self.head.to(device)
-    #     return super(BasePipeline, self).to(device)
-
     def _freeze_backbone(self) -> None:
         """Freeze parameters of the feature extractors.
 
@@ -101,9 +91,15 @@ class BasePipeline(nn.Module):
             If no processors are defined, returns inputs unchanged.
         """
         if self.processors is not None:
-            for modality, processor in self.processors.items():
-                inputs[modality] = processor(*inputs[modality])
-        return inputs
+            # for modality, processor in self.processors.items():
+            #     inputs[modality] = processor(*inputs[modality])
+            processed = {
+                modality: processor(*inputs[modality])
+                for modality, processor in self.processors.items()
+            }
+            return processed
+        else:
+            return inputs
 
     def extract_features(
         self, inputs: Dict[str, torch.Tensor]
@@ -116,9 +112,13 @@ class BasePipeline(nn.Module):
         Returns:
             Dict[str, torch.Tensor]: Extracted features for each modality
         """
-        for modality, model in self.feature_extractors.items():
-            inputs[modality] = model(inputs[modality])
-        return inputs
+        # for modality, model in self.feature_extractors.items():
+        #     inputs[modality] = model(inputs[modality])
+        extracted = {
+            modality: model(inputs[modality])
+            for modality, model in self.feature_extractors.items()
+        }
+        return extracted
 
     def downstream_pass(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Apply task-specific head to fused features.
@@ -137,7 +137,10 @@ class BasePipeline(nn.Module):
         return inputs
 
     def forward(
-        self, inputs: Dict[str, Tuple[Any]], output_feats: bool = False
+        self,
+        inputs: Dict[str, Any],
+        output_feats: bool = False,
+        output_projections: bool = False,
     ) -> torch.Tensor:
         """Complete forward pass through the pipeline.
 
@@ -162,14 +165,10 @@ class BasePipeline(nn.Module):
         feats = self.extract_features(inputs)
 
         # Fuse embeddings into one vector
-        fused_embeddings = self.fusion(
-            {modality: feats[modality] for modality in self.fusion.modalities}
+        output: dict = self.fusion(
+            {modality: feats[modality] for modality in self.fusion.modalities},
+            output_projections=output_projections,
         )
-
-        # Prepare the output
-        output = {
-            "embedding": fused_embeddings,
-        }
 
         if output_feats:
             output.update(feats)

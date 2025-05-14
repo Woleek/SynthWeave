@@ -63,6 +63,7 @@ class GFF(BaseFusion):
             **kwargs: Additional arguments passed to parent class
         """
         super(GFF, self).__init__(
+            output_dim,
             modality_keys,
             input_dims,
             bias,
@@ -77,22 +78,30 @@ class GFF(BaseFusion):
 
         # Gate projection to learn modality importance
         if self.proj_dim is None:
-            self.gate_proj = LazyLinearXavier(output_dim * len(modality_keys), bias)
+            self.gate_proj = LazyLinearXavier(self.proj_dim * len(modality_keys), bias)
         else:
             self.gate_proj = LinearXavier(
                 self.proj_dim * len(modality_keys),
-                output_dim * len(modality_keys),
+                self.proj_dim * len(modality_keys),
                 bias,
             )
 
         # Dropout
         self.dropout = nn.Dropout(dropout)
 
-        # Softmax
-        self.softmax = nn.Softmax(dim=-2)  # Act on the modality dimension
-
         # Tanh
         self.tanh = nn.Tanh()
+
+        # Sigmoid -> replaced with Softmax for arbitrary number of modalities
+        # self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Softmax(dim=-2)
+
+        # Apply post-gating projection if needed
+        self.post_proj = (
+            LinearXavier(self.proj_dim, output_dim, bias=False)
+            if self.proj_dim != output_dim
+            else nn.Identity()
+        )
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
 
@@ -115,31 +124,23 @@ class GFF(BaseFusion):
         """
         # Concatenate the embeddings
         concat_embeds = torch.cat(
-            list(embeddings.values()), dim=-1
-        )  # (batch_size, n_modals * embed_dim)
+            [embeddings[k] for k in self.modalities], dim=-1
+        )  # (B, M * PROJ)
 
-        # Apply tanh activation
-        embeddings = {
-            key: self.tanh(embedding) for key, embedding in embeddings.items()
-        }
+        # Compute gate tensor
+        gate_logits = self.dropout(self.gate_proj(concat_embeds))  # (B, M * PROJ)
+        gate = gate_logits.view(-1, len(self.modalities), self.proj_dim)  # (B, M, PROJ)
+        gate = self.softmax(gate)  # sum to 1 over modalities
 
-        # Compute gating vectors
-        gate_logits = self.gate_proj(
-            concat_embeds
-        )  # (batch_size, n_modals * output_dim)
-        gate_logits = self.dropout(gate_logits)
+        # Apply tanh activation to each modality
+        tanh_embeds = torch.stack(
+            [self.tanh(embeddings[k]) for k in self.modalities], dim=1
+        )  # (B, M, PROJ)
 
-        # Apply sigmoid activation to each gate
-        gate_logits = gate_logits.view(-1, len(self.modalities), self.output_dim)
-        gate = self.softmax(gate_logits)  # (batch_size, n_modals, output_dim)
+        # Apply gating mechanism for fusion
+        fusion_vector = (gate * tanh_embeds).sum(dim=1)  # (B, PROJ)
 
-        # Apply gating mechanism to each modality
-        stack_embeds = torch.stack(
-            list(embeddings.values()), dim=1
-        )  # (batch_size, n_modals, embed_dim)
-        gated_embeds = gate * stack_embeds  # element-wise multiplication
-
-        # Sum the gated embeddings
-        fusion_vector = gated_embeds.sum(dim=1)  # (batch_size, output_dim)
+        # Apply final projection if needed
+        fusion_vector = self.post_proj(fusion_vector)  # (B, EMB)
 
         return fusion_vector

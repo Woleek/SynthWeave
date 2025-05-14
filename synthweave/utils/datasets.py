@@ -16,74 +16,6 @@ from synthweave.utils.tools import read_json, read_video
 
 
 # =============================================================================
-#          LAV-DF (https://huggingface.co/datasets/ControlNet/LAV-DF)
-# =============================================================================
-# class LAV_DF_Dataset(Dataset):
-#     def __init__(
-#         self, root: str, metadata_file: str, split: Literal["train", "dev", "test"]
-#     ):
-#         super().__init__()
-
-#         self.root = root
-#         self.split = split
-#         self._load_metadata(os.path.join(self.root, metadata_file), split)
-
-#     def _load_metadata(self, metadata_file: str, split: str):
-#         metadata = read_json(metadata_file)
-
-#         metadata = [sample for sample in metadata if sample["split"] == split]
-#         self.metadata = metadata
-
-#     def __len__(self):
-#         return len(self.metadata)
-
-#     def __getitem__(self, idx: int) -> dict:
-#         meta: dict = self.metadata[idx]
-#         video, audio, info = read_video(os.path.join(self.root, meta["file"]))
-#         meta.update(info)
-
-#         return {"video": video, "audio": audio, "metadata": meta}
-
-
-# class LAV_DF_DataModule(LightningDataModule):
-#     def __init__(
-#         self, root: str, metadata_file: str, batch_size: int = 32, num_workers: int = 0
-#     ):
-#         super().__init__()
-
-#         self.root = root
-#         self.metadata_file = metadata_file
-#         self.batch_size = batch_size
-#         self.num_workers = num_workers
-
-#     def setup(self, stage: str = None):
-#         if stage == "fit" or stage is None:
-#             self.train_dataset = LAV_DF_Dataset(self.root, self.metadata_file, "train")
-#             self.val_dataset = LAV_DF_Dataset(self.root, self.metadata_file, "dev")
-
-#         if stage == "test" or stage is None:
-#             self.test_dataset = LAV_DF_Dataset(self.root, self.metadata_file, "test")
-
-#     def train_dataloader(self):
-#         return DataLoader(
-#             self.train_dataset,
-#             batch_size=self.batch_size,
-#             num_workers=self.num_workers,
-#             shuffle=True,
-#         )
-
-#     def val_dataloader(self):
-#         return DataLoader(
-#             self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers
-#         )
-
-#     def test_dataloader(self):
-#         return DataLoader(
-#             self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers
-#         )
-
-
-# =============================================================================
 #     DeepSpeak_v1_1 (https://huggingface.co/datasets/faridlab/deepspeak_v1_1)
 # =============================================================================
 class DeepSpeak_v1_1_Dataset(Dataset):
@@ -573,6 +505,7 @@ class DeepSpeak_v1_1_DataModule_prep(LightningDataModule):
             shuffle=True,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
+            drop_last=True,
         )
 
     def val_dataloader(self):
@@ -582,6 +515,7 @@ class DeepSpeak_v1_1_DataModule_prep(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             collate_fn=self._collate_fn,
+            drop_last=True,
         )
 
     def test_dataloader(self):
@@ -601,7 +535,6 @@ class DeepSpeak_v1_1_DataModule_prep(LightningDataModule):
 
 # =============================================================================
 DATASET_MAP = {
-    # "LAV-DF": LAV_DF_Dataset,
     "DeepSpeak_v1_1": {
         "original": DeepSpeak_v1_1_Dataset,
         "preprocessed": DeepSpeak_v1_1_Dataset_prep,
@@ -627,7 +560,6 @@ def get_dataset(dataset_type: DatasetType, **kwargs) -> Dataset:
 
 
 DATAMODULE_MAP = {
-    # "LAV-DF": LAV_DF_DataModule,
     "DeepSpeak_v1_1": {
         "original": DeepSpeak_v1_1_DataModule,
         "preprocessed": DeepSpeak_v1_1_DataModule_prep,

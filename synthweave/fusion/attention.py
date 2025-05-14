@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from typing import Dict, List, Optional
@@ -37,7 +38,7 @@ class AFF(BaseFusion):
         modality_keys: List[str],
         input_dims: Optional[Dict[str, int]] = None,
         bias: bool = True,
-        dropout: float = 0.5,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
         hidden_proj_dim: Optional[int] = None,
         out_proj_dim: Optional[int] = None,
@@ -59,10 +60,11 @@ class AFF(BaseFusion):
             **kwargs: Additional arguments including num_att_heads
         """
         super(AFF, self).__init__(
+            output_dim,
             modality_keys,
             input_dims,
             bias,
-            dropout,
+            dropout_p,
             unify_embeds,
             hidden_proj_dim,
             out_proj_dim,
@@ -71,12 +73,25 @@ class AFF(BaseFusion):
 
         num_att_heads: int = kwargs.get("num_att_heads", 1)
 
+        attn_dim = self.proj_dim
+        assert attn_dim is not None, (
+            "AFF needs equal-sized modality embeddings. "
+            "Either pass unify_embeds=True or supply out_proj_dim."
+        )
+
         # Attention layer for computing weights
         self.attention_layer = nn.MultiheadAttention(
-            embed_dim=output_dim,
+            embed_dim=attn_dim,
             num_heads=num_att_heads,
-            dropout=dropout,
+            dropout=dropout_p,
             batch_first=True,
+        )
+
+        # Project to desired output dimension if needed
+        self.post_proj = (
+            LinearXavier(attn_dim, output_dim, bias=False)
+            if attn_dim != output_dim
+            else nn.Identity()
         )
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
@@ -93,14 +108,19 @@ class AFF(BaseFusion):
         """
         # Stack embeddings
         mod_embeds = torch.stack(
-            list(embeddings.values()), dim=1
-        )  # (batch_size, num_modals, embed_dim)
+            [embeddings[k] for k in self.modalities], dim=1
+        )  # (B, M, PROJ)
 
         # Apply attention (self-attention over modalities)
-        att_emb, att_weights = self.attention_layer(mod_embeds, mod_embeds, mod_embeds)
+        att_emb, att_weights = self.attention_layer(
+            mod_embeds, mod_embeds, mod_embeds
+        )  # (B, M, PROJ)
 
         # Fuse all attended features by summing over modalities
-        fusion_vector = att_emb.sum(dim=1)  # (batch_size, embed_dim)
+        fusion_vector = att_emb.sum(dim=1)  # (B, PROJ)
+
+        # Apply post-attention projection if needed
+        fusion_vector = self.post_proj(fusion_vector)  # (B, EMB)
 
         return fusion_vector
 
@@ -129,7 +149,7 @@ class IAFF(BaseFusion):
         modality_keys: List[str],
         input_dims: Optional[Dict[str, int]] = None,
         bias: bool = True,
-        dropout: float = 0.5,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
         hidden_proj_dim: Optional[int] = None,
         out_proj_dim: Optional[int] = None,
@@ -151,10 +171,11 @@ class IAFF(BaseFusion):
             **kwargs: Additional arguments including num_att_heads
         """
         super(IAFF, self).__init__(
+            output_dim,
             modality_keys,
             input_dims,
             bias,
-            dropout,
+            dropout_p,
             unify_embeds,
             hidden_proj_dim,
             out_proj_dim,
@@ -163,16 +184,32 @@ class IAFF(BaseFusion):
 
         num_att_heads: int = kwargs.get("num_att_heads", 1)
 
+        attn_dim = self.proj_dim
+        assert attn_dim is not None, (
+            "IAFF needs equal-size modality embeddings. "
+            "Use unify_embeds=True or set out_proj_dim."
+        )
+
         # Multihead Attention for inter-attention between modalities
         self.inter_attention_layer = nn.MultiheadAttention(
-            embed_dim=output_dim,
+            embed_dim=attn_dim,
             num_heads=num_att_heads,
-            dropout=dropout,
+            dropout=dropout_p,
             batch_first=True,
         )
 
         # Softmax layer
         self.softmax = nn.Softmax(dim=-1)
+
+        # Dropout layer
+        self.dropout = nn.Dropout(dropout_p)
+
+        # Project to desired output dimension if needed
+        self.post_proj = (
+            LinearXavier(attn_dim, output_dim, bias=False)
+            if attn_dim != output_dim
+            else nn.Identity()
+        )
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
 
@@ -188,27 +225,30 @@ class IAFF(BaseFusion):
         """
         # Stack modality embeddings for inter-attention
         mod_embeds = torch.stack(
-            list(embeddings.values()), dim=1
-        )  # (batch_size, num_modals, embed_dim)
+            [embeddings[k] for k in self.modalities], dim=1
+        )  # (B, M, PROJ)
 
         # Inter-attention mechanism (Self-Attention across modalities)
         att_emb, attn_weights = self.inter_attention_layer(
             mod_embeds, mod_embeds, mod_embeds
-        )
+        )  # (B, M, PROJ)
 
-        # Apply softmax normalization
-        att_emb_norm = self.softmax(att_emb)
+        # Scalar gates (softmax over feature dimension)
+        sim = (mod_embeds * att_emb).sum(dim=-1)  # (B, M)
+        gates = self.softmax(sim / math.sqrt(self.proj_dim))  # (B, M)
+        gates = gates.unsqueeze(-1)  # (B, M, 1)
 
-        # Compute modality-enhanced embeddings with skip connections
-        enhanced_embeds = [
-            torch.tanh(emb + att_emb_norm[:, i, :])  # Add attention-enhanced embedding
-            for i, emb in enumerate(list(embeddings.values()))
-        ]
+        # Enhance embeddings with residuals and gates
+        enhanced_embeds = mod_embeds + gates * att_emb  # (B, M, PROJ)
 
-        # Fuse all attended features by summation
-        fusion_vector = torch.stack(enhanced_embeds, dim=0).sum(
-            dim=0
-        )  # (batch_size, embed_dim)
+        # Apply dropout
+        enhanced_embeds = self.dropout(enhanced_embeds)  # (B, M, PROJ)
+
+        # Sum and apply dropout again
+        fusion_vector = self.dropout(enhanced_embeds.sum(dim=1))  # (B, PROJ)
+
+        # Project to output dimension if needed
+        fusion_vector = self.post_proj(fusion_vector)  # (B, EMB)
 
         return fusion_vector
 
@@ -259,6 +299,7 @@ class CAFF(BaseFusion):
             **kwargs: Additional arguments including num_att_heads
         """
         super(CAFF, self).__init__(
+            output_dim,
             modality_keys,
             input_dims,
             bias,
@@ -271,13 +312,19 @@ class CAFF(BaseFusion):
 
         num_att_heads: int = kwargs.get("num_att_heads", 1)
 
+        attn_dim = self.proj_dim
+        assert attn_dim is not None, (
+            "IAFF needs equal-size modality embeddings. "
+            "Use unify_embeds=True or set out_proj_dim."
+        )
+
         # Multihead Attention Layers (one for each modality pair)
         self.cross_attention_layers = nn.ModuleDict(
             [
                 (
                     f"{key1}_{key2}",
                     nn.MultiheadAttention(
-                        embed_dim=self.proj_dim,
+                        embed_dim=attn_dim,
                         num_heads=num_att_heads,
                         dropout=dropout,
                         batch_first=True,
@@ -307,32 +354,26 @@ class CAFF(BaseFusion):
             torch.Tensor: Fused representation with shape (batch_size, embed_dim)
         """
         # Compute cross-attention for each modality pair
-        attended_embeds = []
-        for key1, embed1 in embeddings.items():
-            for key2, embed2 in embeddings.items():
-                if key1 == key2:
+        sum_att = {k: torch.zeros_like(v) for k, v in embeddings.items()}
+        for i, m1 in enumerate(self.modalities):
+            for j, m2 in enumerate(self.modalities):
+                if i == j:
                     continue
-
-                # Apply cross-attention
-                att_emb, att_weight = self.cross_attention_layers[f"{key1}_{key2}"](
-                    embed1.unsqueeze(1), embed2.unsqueeze(1), embed2.unsqueeze(1)
-                )
-                attended_embeds.append(att_emb.squeeze(1))
+                att, _ = self.cross_attention_layers[f"{m1}_{m2}"](
+                    embeddings[m1].unsqueeze(1),  # query  (B,1,PROJ)
+                    embeddings[m2].unsqueeze(1),  # key    (B,1,PROJ)
+                    embeddings[m2].unsqueeze(1),  # value  (B,1,PROJ)
+                )  # att → (B,1,PROJ)
+                sum_att[m1] += att.squeeze(1)  # accumulate (B,PROJ)
 
         # Combine attended features with original embeddings via skip connection and nonlinearity via tanh
         refined_embeds = [
-            torch.tanh(embed + attended)
-            for embed, attended in zip(list(embeddings.values()), attended_embeds)
-        ]
-
-        # Concatenate refined features to obtain fused representation
-        concat_refined_embeds = torch.cat(
-            refined_embeds, dim=-1
-        )  # (batch_size, num_modals * embed_dim)
+            torch.tanh(embeddings[m] + sum_att[m]) for m in self.modalities
+        ]  # [(B, PROJ)]
 
         # Apply aggregation layer
         fusion_vector = self.aggregation_layer(
-            concat_refined_embeds
-        )  # (batch_size, embed_dim)
+            torch.cat(refined_embeds, dim=-1)
+        )  # (B, EMB)
 
         return fusion_vector

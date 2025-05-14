@@ -1,5 +1,6 @@
 from torch import nn
 import torch.nn.functional as F
+from collections import OrderedDict
 
 
 class LazyLinearXavier(nn.LazyLinear):
@@ -70,11 +71,15 @@ class ProjectionMLP(nn.Module):
         super(ProjectionMLP, self).__init__()
 
         self.proj = nn.Sequential(
-            LinearXavier(in_dim, hidden_dim, bias),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            LinearXavier(hidden_dim, out_dim, bias),
+            OrderedDict(
+                [
+                    ("linear1", LinearXavier(in_dim, hidden_dim, bias)),
+                    ("batchnorm", nn.BatchNorm1d(hidden_dim)),
+                    ("gelu", nn.GELU()),
+                    ("dropout", nn.Dropout(dropout)),
+                    ("linear2", LinearXavier(hidden_dim, out_dim, bias)),
+                ]
+            )
         )
 
     def forward(self, x):
@@ -108,11 +113,15 @@ class LazyProjectionMLP(nn.Module):
         super(LazyProjectionMLP, self).__init__()
 
         self.proj = nn.Sequential(
-            LazyLinearXavier(hidden_dim, bias),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            LinearXavier(hidden_dim, out_dim, bias),
+            OrderedDict(
+                [
+                    ("linear1", LazyLinearXavier(hidden_dim, bias)),
+                    ("batchnorm", nn.BatchNorm1d(hidden_dim)),
+                    ("gelu", nn.GELU()),
+                    ("dropout", nn.Dropout(dropout)),
+                    ("linear2", LinearXavier(hidden_dim, out_dim, bias)),
+                ]
+            )
         )
 
     def forward(self, x):
@@ -130,7 +139,7 @@ class LazyProjectionMLP(nn.Module):
 class L2NormalizationLayer(nn.Module):
     """A layer that performs L2 normalization on the input tensor."""
 
-    def __init__(self, dim=-1, eps=1e-12):
+    def __init__(self, dim=-1, eps=1e-6):
         """
         Args:
             dim (int, optional): Dimension along which to normalize. Defaults to -1.

@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import torch
 import torch.nn as nn
 from ..utils.modules import LazyProjectionMLP, ProjectionMLP, L2NormalizationLayer
@@ -35,15 +36,16 @@ class BaseFusion(nn.Module):
 
     def __init__(
         self,
+        output_dim: int,
         modality_keys: List[str],
         input_dims: Optional[Dict[str, int]] = None,
         bias: bool = True,
-        dropout: float = 0.5,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
         hidden_proj_dim: Optional[int] = None,
         out_proj_dim: Optional[int] = None,
-        normalize_proj: bool = True,
-    ) -> None:
+        normalize: bool = True,
+    ):
         """Initialize the base fusion module.
 
         Args:
@@ -54,16 +56,17 @@ class BaseFusion(nn.Module):
             unify_embeds: Whether to project all modalities to same dimension
             hidden_proj_dim: Hidden dimension for projection MLP
             out_proj_dim: Output dimension for projection MLP
-            normalize_proj: Whether to L2 normalize projections
+            normalize: Whether to L2 normalize projections
 
         Note:
             If input_dims is None, lazy layers will be used to infer dimensions.
         """
         super(BaseFusion, self).__init__()
 
+        self.output_dim = output_dim
         self.modalities = modality_keys
         self.bias = bias
-        self.dropout = dropout
+        self.dropout_p = dropout_p
 
         # Set input dimensions
         if input_dims is None:
@@ -78,33 +81,53 @@ class BaseFusion(nn.Module):
         if unify_embeds:
             if out_proj_dim is None:  # Determine output dimension
                 assert all(
-                    [dim is not None for dim in input_dims.values()]
+                    dim is not None for dim in input_dims.values()
                 ), "Either specify output dimension or input dimensions for all modalities."
-                out_proj_dim = min([dim for dim in input_dims.values()])
+                out_proj_dim = min(dim for dim in input_dims.values())
 
             # Set projection dim
+            hidden_proj_dim = (
+                hidden_proj_dim or out_proj_dim
+            )  # Determine hidden dimension
             self.proj_dim = out_proj_dim
 
-            if hidden_proj_dim is None:  # Determine hidden dimension
-                hidden_proj_dim = out_proj_dim
-
-            self.projection_layers = nn.ModuleDict(
+            self.projection = nn.ModuleDict(
                 {
                     mod: nn.Sequential(
-                        (
-                            ProjectionMLP(
-                                input_dim, hidden_proj_dim, out_proj_dim, bias, dropout
-                            )
-                            if input_dim is not None
-                            else LazyProjectionMLP(
-                                hidden_proj_dim, out_proj_dim, bias, dropout
-                            )
-                        ),
-                        (
-                            L2NormalizationLayer(dim=-1)
-                            if normalize_proj
-                            else nn.Identity()
-                        ),
+                        OrderedDict(
+                            [
+                                (
+                                    (
+                                        "mlp",
+                                        (
+                                            ProjectionMLP(
+                                                input_dim,
+                                                hidden_proj_dim,
+                                                out_proj_dim,
+                                                bias=False,
+                                                dropout=dropout_p,
+                                            )
+                                            if input_dim is not None
+                                            else LazyProjectionMLP(
+                                                hidden_proj_dim,
+                                                out_proj_dim,
+                                                bias=False,
+                                                dropout=dropout_p,
+                                            )
+                                        ),
+                                    )
+                                ),
+                                ("layernorm", nn.LayerNorm(out_proj_dim)),
+                                (
+                                    "l2norm",
+                                    (
+                                        L2NormalizationLayer(dim=-1)
+                                        if normalize
+                                        else nn.Identity()
+                                    ),
+                                ),
+                            ]
+                        )
                     )
                     for mod, input_dim in self.input_dims.items()
                 }
@@ -112,12 +135,29 @@ class BaseFusion(nn.Module):
         else:
             self.proj_dim = None
 
-            self.projection_layers = nn.ModuleDict(
+            self.projection = nn.ModuleDict(
                 {mod: nn.Identity() for mod in modality_keys}
             )
 
-    def __call__(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
-        return self.forward(embeddings)
+        # Post fusion operations
+        self.refiner = nn.Sequential(
+            OrderedDict(
+                [
+                    ("layernorm", nn.LayerNorm(self.output_dim)),
+                    ("gelu", nn.GELU()),
+                    ("dropout", nn.Dropout(dropout_p)),
+                    # (
+                    #     "l2norm",
+                    #     (L2NormalizationLayer(dim=-1) if normalize else nn.Identity()),
+                    # ),
+                ]
+            )
+        )
+
+    def __call__(
+        self, embeddings: Dict[str, torch.Tensor], output_projections: bool = False
+    ) -> torch.Tensor:
+        return self.forward(embeddings, output_projections)
 
     @abstractmethod
     def _forward(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -138,7 +178,9 @@ class BaseFusion(nn.Module):
         """
         raise NotImplementedError("Forward method not implemented!")
 
-    def forward(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(
+        self, embeddings: Dict[str, torch.Tensor], output_projections: bool = False
+    ) -> torch.Tensor:
         """Main forward pass of the fusion module.
 
         Handles projection of embeddings and calls the specific fusion implementation.
@@ -153,24 +195,37 @@ class BaseFusion(nn.Module):
             torch.Tensor: The fused embedding representation.
         """
         # Project embeddings
+        proj_embeddings = {}
         for mod in embeddings.keys():
             embed = embeddings[mod]
 
             if embed.dim() == 3:  # Handle sequence data (B, T, E)
                 B, T, E = embed.shape
                 embed = embed.reshape(B * T, E)  # Flatten
-                embed = self.projection_layers[mod](embed)  # Project
+                embed = self.projection[mod](embed)  # Project
                 embed = embed.reshape(B, T, -1)  # Reshape back
-
-                embeddings[mod] = embed
+                proj_embeddings[mod] = embed
 
             else:  # (B, E)
-                embeddings[mod] = self.projection_layers[mod](embed)
-
-        # TODO: Consider automatic reweighting:
-        # weight = nn.Parameter(torch.ones(1, self.out_proj_dim))
-        # embed = embed * weight
-        # for each modality
+                proj_embeddings[mod] = self.projection[mod](embed)
 
         # Perform fusion
-        return self._forward(embeddings)
+        fused_embedding = self._forward(proj_embeddings)
+
+        # Refine the fused embedding
+        fused_embedding = self.refiner(fused_embedding)
+
+        # Output
+        out = {
+            "embedding": fused_embedding,
+        }
+
+        if output_projections:
+            out.update(
+                {
+                    f"{mod}_proj": proj_embed
+                    for mod, proj_embed in proj_embeddings.items()
+                }
+            )
+
+        return out
