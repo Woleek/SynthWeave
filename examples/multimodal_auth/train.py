@@ -24,6 +24,9 @@ from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torchmetrics.functional.classification import binary_roc
 
+from pytorch_metric_learning.losses import SupConLoss, CrossBatchMemory
+from pytorch_lightning import seed_everything
+
 
 def _far_frr(cm: torch.Tensor):
     tn, fp, fn, tp = cm.flatten()
@@ -42,14 +45,25 @@ def _eer(probs: torch.Tensor, labels: torch.Tensor):
 class DeepfakeDetector(pl.LightningModule):
     def __init__(
         self,
-        pipeline,
+        pipeline: MultiModalAuthPipeline,
         detection_task: Literal["binary", "fine-grained"] = "binary",
         lr: float = 1e-4,
+        cls_loss_weight: float = 1.0,
+        contr_loss_fused_weight: float = 0.0,
+        contr_loss_mod_weight: float = 0.0,
+        lr_scheduler_name: str = None,
     ):
         super().__init__()
         self.pipeline = pipeline
+        self.add_module("pipeline", pipeline)
         self.task = detection_task
         self.lr = lr
+        self.loss_w = {
+            "cls": cls_loss_weight,
+            "contr_fused": contr_loss_fused_weight,
+            "contr_mod": contr_loss_mod_weight,
+        }
+        self.lr_scheduler_name = lr_scheduler_name
 
         self.metrics: Dict[str, Dict[str, torch.nn.Module]] = {}
         metric_kwargs = (
@@ -76,6 +90,29 @@ class DeepfakeDetector(pl.LightningModule):
             self._probs_val, self._labels_val = [], []
             self._probs_test, self._labels_test = [], []
 
+    def on_after_backward(self):
+        if self.global_step % 100 == 0:  # every 100 steps
+            # for n, p in self.named_parameters():
+            #     if p.grad is not None:
+            #         self.logger.experiment.add_scalar(
+            #             f"grad_norm/{n}", p.grad.norm(), self.global_step
+            #         )
+
+            # 1) log grad-to-weight ratio  (helps detect layers that barely move)
+            for n, p in self.named_parameters():
+                if p.grad is None:
+                    continue
+                ratio = (p.grad.norm() / (p.data.norm() + 1e-12)).item()
+                self.logger.experiment.add_scalar(f"g2w/{n}", ratio, self.global_step)
+
+            # 2) histogram of gradients for one batch (nan / inf check)
+            with torch.no_grad():
+                for n, p in self.named_parameters():
+                    if p.grad is not None:
+                        self.logger.experiment.add_histogram(
+                            f"grad_dist/{n}", p.grad, self.global_step
+                        )
+
     def setup(self, stage: str):
         # Ensure metrics are on correct device after model is moved
         device = self.device
@@ -85,6 +122,31 @@ class DeepfakeDetector(pl.LightningModule):
         if self.task == "binary":
             self.confmat_val = self.confmat_val.to(device)
             self.confmat_test = self.confmat_test.to(device)
+
+        # Losses
+        for loss in self.loss_w:
+            if self.loss_w[loss] > 0.0:
+                if loss == "cls":
+                    if self.task == "binary":
+                        self.cls_loss = torch.nn.BCELoss()
+                    else:
+                        self.cls_loss = torch.nn.CrossEntropyLoss()
+                elif loss == "contr_fused":
+                    self.contr_loss_fused = SupConLoss()
+                    # supcon_fused = SupConLoss()
+                    # self.contr_loss_fused = CrossBatchMemory(
+                    #     loss=supcon_fused,
+                    #     embedding_size=self.pipeline.fusion.output_dim,
+                    #     memory_size=512 # queue size
+                    # )
+                elif loss == "contr_mod":
+                    self.contr_loss_mod = SupConLoss()
+                    # supcon_mod = SupConLoss()
+                    # self.contr_loss_mod = CrossBatchMemory(
+                    #     loss=supcon_mod,
+                    #     embedding_size=self.pipeline.fusion.proj_dim,
+                    #     memory_size=512 # queue size
+                    # )
 
     def forward(self, batch):
         return self.pipeline(batch)
@@ -159,7 +221,16 @@ class DeepfakeDetector(pl.LightningModule):
                 self._probs_test.clear()
                 self._labels_test.clear()
 
+    # def on_train_epoch_start(self):
+    # Reset contrastive loss queues
+    # if self.loss_w["contr_fused"] > 0.0:
+    #     self.contr_loss_fused.reset_queue()
+    # if self.loss_w["contr_mod"] > 0.0:
+    #     self.contr_loss_mod.reset_queue()
+
     def on_train_epoch_end(self):
+        lr = self.trainer.optimizers[0].param_groups[0]["lr"]
+        self.log("train/lr", lr)
         self._log_epoch_metrics("train")
 
     def on_validation_epoch_end(self):
@@ -168,34 +239,115 @@ class DeepfakeDetector(pl.LightningModule):
     def on_test_epoch_end(self):
         self._log_epoch_metrics("test")
 
-    def _step(self, batch, stage):
+    def _step(self, batch, stage, batch_idx):
         y = self._get_labels(batch)
-        logits = self(batch)["logits"]
+        out = self(batch)
+
+        # SupCon loss
+        fused_contr_loss = 0.0
+        if self.loss_w["contr_fused"] > 0.0:
+            emb = out["embedding"]
+            emb_norm = F.normalize(emb, dim=-1)
+            fused_contr_loss = self.contr_loss_fused(emb_norm, y)
+
+        mod_contr_loss = 0.0
+        if self.loss_w["contr_mod"] > 0.0:
+            for mod in self.pipeline.fusion.modalities:
+                mod_emb = out[f"{mod}_proj"]
+                mod_emb_norm = F.normalize(mod_emb, dim=-1)
+                mod_contr_loss += self.contr_loss_mod(mod_emb_norm, y)
+        mod_contr_loss /= len(self.pipeline.fusion.modalities)
+
+        # BCE / CE loss
+        logits = out["logits"]
 
         if self.task == "binary":
             prob = logits.squeeze(-1)
-            loss = F.binary_cross_entropy(prob, y.float())
+            # cls_loss = F.binary_cross_entropy(prob, y.float())
+            cls_loss = self.cls_loss(prob, y.float())
             preds = prob > 0.5
         else:
             prob = logits
-            loss = F.cross_entropy(prob, y)
+            # cls_loss = F.cross_entropy(prob, y)
+            cls_loss = self.cls_loss(prob, y)
             preds = torch.argmax(prob, dim=1)
 
-        self.log(f"{stage}/loss", loss, prog_bar=(stage == "train"))
         self._update_metrics(stage, preds, prob, y)
+
+        # Total loss
+        loss = (
+            cls_loss * self.loss_w["cls"]
+            + fused_contr_loss * self.loss_w["contr_fused"]
+            + mod_contr_loss * self.loss_w["contr_mod"]
+        )
+
+        if stage == "train":
+            (
+                self.log(f"{stage}/cls_loss", cls_loss)
+                if self.loss_w["cls"] > 0.0
+                else None
+            )
+            (
+                self.log(f"{stage}/contr_fused_loss", fused_contr_loss)
+                if self.loss_w["contr_fused"] > 0.0
+                else None
+            )
+            (
+                self.log(f"{stage}/contr_mod_loss", mod_contr_loss)
+                if self.loss_w["contr_mod"] > 0.0
+                else None
+            )
+
+        self.log(f"{stage}/loss", loss, prog_bar=(stage == "train"))
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self._step(batch, "train")
+        return self._step(batch, "train", batch_idx)
 
     def validation_step(self, batch, batch_idx):
-        return self._step(batch, "val")
+        return self._step(batch, "val", batch_idx)
 
     def test_step(self, batch, batch_idx):
-        return self._step(batch, "test")
+        return self._step(batch, "test", batch_idx)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
+
+        if self.lr_scheduler_name is None:
+            return optimizer
+
+        elif self.lr_scheduler_name == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=self.trainer.max_epochs,
+                eta_min=self.lr * 0.1,
+            )
+
+            lr_scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+            }
+
+        elif self.lr_scheduler_name == "plateau":
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode="max",
+                factor=0.1,
+                patience=5,  # TODO: test other values
+            )
+
+            lr_scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+                "monitor": "val/f1",
+                "strict": True,
+            }
+        else:
+            raise ValueError(f"Unknown scheduler name: {self.scheduler_name}")
+
+        return {"optimizer": optimizer, "lr_scheduler": lr_scheduler_config}
 
 
 def parse_args():
@@ -213,7 +365,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # Training
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--max_epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
@@ -224,6 +376,37 @@ def parse_args():
         action="store_true",
         default=False,
         help="Resume training from checkpoint",
+    )
+    parser.add_argument(
+        "--cls_loss_w",
+        type=float,
+        default=1.0,
+        help="Weight for classification loss",
+    )
+    parser.add_argument(
+        "--contr_loss_mod_w",
+        type=float,
+        default=0.05,
+        help="Weight for contrastive loss on individual modalities",
+    )
+    parser.add_argument(
+        "--contr_loss_fused_w",
+        type=float,
+        default=0.1,
+        help="Weight for contrastive loss on fused features",
+    )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.1,
+        help="Dropout rate for the fusion module",
+    )
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default="cosine",
+        choices=["cosine", "plateau", None],
+        help="Learning rate scheduler",
     )
 
     # Dataset
@@ -257,13 +440,13 @@ def parse_args():
     parser.add_argument(
         "--emb_dim",
         type=int,
-        default=256,
+        default=512,
         help="Output embedding dimension of the fusion module",
     )
     parser.add_argument(
         "--proj_dim",
         type=int,
-        default=256,
+        default=1024,
         help="Output projection dimension of the fusion module",
     )
 
@@ -286,7 +469,7 @@ def main(args: argparse.Namespace):
             window_len=args.window_len,
             step=args.window_step,
             head_pose_dir="../../../models/head_pose",
-        )  # TODO: handle no face detection error
+        )
         aud_proc = AudioPreprocessor(window_len=args.window_len, step=args.window_step)
 
         ds_kwargs = {
@@ -323,7 +506,8 @@ def main(args: argparse.Namespace):
         output_dim=EMB_DIM,
         modality_keys=["video", "audio"],
         out_proj_dim=args.proj_dim,
-        # num_att_heads=4,
+        num_att_heads=4,  # only for attention-based fusions
+        dropout=args.dropout,
     )
 
     if args.task == "binary":
@@ -354,6 +538,8 @@ def main(args: argparse.Namespace):
         Detection Task: {args.task}
         Batch Size: {args.batch_size}
         Learning Rate: {args.lr:.2e}
+        Contrastive Loss: {True if (args.contr_loss_mod_w or args.contr_loss_fused_w) else False}
+        Dropout: {args.dropout}
     
     [DATASET]
         Preprocessed: {args.preprocessed or args.encoded}
@@ -394,11 +580,18 @@ def main(args: argparse.Namespace):
         logger = TensorBoardLogger(log_base_dir, name=run_name)
         ckpt_path = None
 
-    model = DeepfakeDetector(pipeline=pipe, detection_task=args.task, lr=args.lr)
+    model = DeepfakeDetector(
+        pipeline=pipe,
+        detection_task=args.task,
+        lr=args.lr,
+        cls_loss_weight=args.cls_loss_w,
+        contr_loss_fused_weight=args.contr_loss_fused_w,
+        contr_loss_mod_weight=args.contr_loss_mod_w,
+    )
 
     model_checkpoint = ModelCheckpoint(
-        monitor="val/eer",
-        mode="min",
+        monitor="val/f1",
+        mode="max",
         save_last=True,
         save_top_k=1,
     )
@@ -423,10 +616,18 @@ def main(args: argparse.Namespace):
 
     trainer.fit(model, datamodule=dm, ckpt_path=ckpt_path)
 
-    trainer.test(model, datamodule=dm, ckpt_path="best")
+    if not args.dev:
+        trainer.test(model, datamodule=dm, ckpt_path="best")
+
+    # optim_vars = {
+    #     id(p) for g in trainer.optimizers[0].param_groups for p in g["params"]
+    # }
+    # for name, p in model.named_parameters():
+    #     print(name, id(p) in optim_vars)
 
 
 if __name__ == "__main__":
+    seed_everything(seed=42)
     torch.set_float32_matmul_precision("medium")
 
     args = parse_args()

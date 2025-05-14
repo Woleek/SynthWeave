@@ -342,7 +342,7 @@ class MultiModalAuthPipeline(BasePipeline):
         )
 
     def forward(self, inputs: Dict[str, Any]) -> torch.Tensor:
-        outs = super().forward(inputs, output_feats=True)
+        outs = super().forward(inputs, output_feats=True, output_projections=True)
         return outs
 
     def verify(self, inputs: Dict[str, Any]) -> torch.Tensor:
