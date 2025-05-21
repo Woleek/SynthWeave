@@ -12,8 +12,9 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from src.pipe import ImagePreprocessor, AudioPreprocessor, AdaFace, ReDimNet
 from synthweave.utils.datasets import get_dataset
-from unimodal import AdaFace, ReDimNet
 
 # Configure logging
 logging.basicConfig(
@@ -28,19 +29,29 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Process and encode multimodal data")
 
     # Dataset options
+    parser.add_argument("--dataset", choices=["DeepSpeak_v1_1", "SWAN_DF"],
+                   required=True, help="Which dataset to load")
     parser.add_argument(
-        "--data_dir",
-        type=str,
-        default="./processed_data/DeepSpeak_v1_1",
-        help="Path to the dataset directory",
+        "--window_len", type=int, default=4, help="Window length for processing"
+    )
+    parser.add_argument(
+        "--window_step", type=int, default=1, help="Step size between windows"
+    )
+    # SWAN-DF specific
+    parser.add_argument("--resolutions",  nargs="*", default=None,
+                   help="Subset of fake resolutions to keep", choices=[None, "160", "256", "320"])
+
+    # Processing options
+    parser.add_argument(
+        "--encode", action="store_true", help="Encode video and audio data"
     )
 
     # Save options
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./encoded_data",
-        help="Directory to save encoded data",
+        default="./processed_data",
+        help="Directory to save processed data",
     )
     parser.add_argument(
         "--resume", action="store_true", help="Resume from existing files"
@@ -54,17 +65,15 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_encoders(device):
+def load_encoders(encode: bool = False):
     """Load encoders if encoding is enabled."""
+    if not encode:
+        return None, None
 
     logger.info("Loading encoders...")
     try:
         aud_encoder = ReDimNet(freeze=True)
-        aud_encoder.to(device)
-        aud_encoder.eval()
-        img_encoder = AdaFace(path="../../../models", freeze=True)
-        img_encoder.to(device)
-        img_encoder.eval()
+        img_encoder = AdaFace(path="../../../../models", freeze=True)
         return img_encoder, aud_encoder
     except Exception as e:
         logger.error(f"Failed to load encoders: {e}")
@@ -178,30 +187,23 @@ def recover_missing_index_entries(
         return False
 
 
-def encode_sample(
+def process_sample(
     sample: Dict[str, Any],
     sample_id: str,
     h5f: h5py.File,
     csv_writer: csv.DictWriter,
     ds,
-    img_encoder,
-    aud_encoder,
-    device,
+    img_encoder=None,
+    aud_encoder=None,
 ) -> bool:
-    """Encode a single sample and save to H5 file."""
+    """Process a single sample and save to H5 file."""
     try:
-        # Load data
-        vid_windows = sample["video"]
-        vid_windows = vid_windows.to(device)
-        aud_windows = sample["audio"]
-        aud_windows = aud_windows.to(device)
+        # Process data
+        vid, aud = sample["video"], sample["audio"]
 
-        # Encode
-        with torch.no_grad():
-            vid_windows = img_encoder(vid_windows)
-            aud_windows = aud_encoder(aud_windows)
-        vid_windows = vid_windows.detach().cpu()
-        aud_windows = aud_windows.detach().cpu()
+        # Encode if encoders are provided
+        if img_encoder and aud_encoder:
+            vid, aud = img_encoder(vid), aud_encoder(aud)
 
         # Get metadata
         meta = sample["metadata"]
@@ -220,24 +222,19 @@ def encode_sample(
         grp = h5f.create_group(sample_id)
         grp.create_dataset(
             "video",
-            data=vid_windows.numpy() if hasattr(vid_windows, "numpy") else vid_windows,
+            data=vid.numpy() if hasattr(vid, "numpy") else vid,
             compression="gzip",
         )
         grp.create_dataset(
             "audio",
-            data=aud_windows.numpy() if hasattr(aud_windows, "numpy") else aud_windows,
+            data=aud.numpy() if hasattr(aud, "numpy") else aud,
             compression="gzip",
         )
         grp.attrs["metadata"] = json.dumps(serializable_meta)
 
         # Update index
-        for i in range(len(vid_windows)):
+        for i in range(len(vid)):
             csv_writer.writerow({"sample_id": sample_id, "window_idx": i})
-
-        # Cleanup on large samples
-        if vid_windows.shape[0] > 30:
-            del vid_windows, aud_windows, sample
-            torch.cuda.empty_cache()
 
         return True
     except Exception as e:
@@ -251,19 +248,18 @@ def encode_sample(
         return False
 
 
-def encode_split(
+def process_split(
     ds,
     split_name: str,
     root_dir: Path,
-    img_encoder,
-    aud_encoder,
+    img_encoder=None,
+    aud_encoder=None,
     resume: bool = False,
     force: bool = False,
     start_idx: int = 0,
-    device="cpu",
 ) -> bool:
-    """Encode a single dataset split."""
-    logger.info(f"Encoding {split_name} split...")
+    """Process a single dataset split."""
+    logger.info(f"Processing {split_name} split...")
 
     h5_path = root_dir / f"{split_name}.h5"
     csv_path = root_dir / f"{split_name}_flat_index.csv"
@@ -300,7 +296,7 @@ def encode_split(
     csv_mode = "a" if resume and csv_path.exists() else "w"
 
     success = True
-    encoded_count = 0
+    processed_count = 0
     total_samples = len(ds)
 
     # === Main processing ===
@@ -315,14 +311,14 @@ def encode_split(
         remaining_count = total_samples - existing_count
         logger.info(
             f"Starting from sample index {start_local_idx}/{total_samples} "
-            + f"(skipping {existing_count} already encoded samples)"
+            + f"(skipping {existing_count} already processed samples)"
         )
 
-        # Optimize by skipping already encoded samples
+        # Optimize by skipping already processed samples
         pbar = tqdm(total=remaining_count, desc=split_name)
 
         try:
-            # Skip to the first not encoded sample
+            # Skip to the first unprocessed sample
             if start_local_idx > 0:
                 logger.info(f"Skipping to sample {start_local_idx}...")
 
@@ -330,11 +326,13 @@ def encode_split(
             for local_idx in range(start_local_idx, total_samples):
                 sample_id = f"sample_{sample_counter:06d}"
 
-                # if (split_name == 'train' and local_idx in [2214]) or (split_name == 'test' and local_idx in [2541, 2546]):
-                #     # error samples
-                #     sample_counter += 1
-                #     pbar.update(1)
-                #     continue
+                if (split_name == "train" and local_idx in [2214]) or (
+                    split_name == "test" and local_idx in [2541, 2546]
+                ):
+                    # error samples
+                    sample_counter += 1
+                    pbar.update(1)
+                    continue
 
                 # Skip if sample already exists (shouldn't happen but safety check)
                 if sample_id in h5_ids:
@@ -346,21 +344,14 @@ def encode_split(
                 sample = ds[local_idx]
 
                 # Process the sample
-                if encode_sample(
-                    sample,
-                    sample_id,
-                    h5f,
-                    csv_writer,
-                    ds,
-                    img_encoder,
-                    aud_encoder,
-                    device,
+                if process_sample(
+                    sample, sample_id, h5f, csv_writer, ds, img_encoder, aud_encoder
                 ):
-                    encoded_count += 1
+                    processed_count += 1
                     pbar.set_postfix(
                         {
-                            "encoded": encoded_count,
-                            "total": existing_count + encoded_count,
+                            "processed": processed_count,
+                            "total": existing_count + processed_count,
                         }
                     )
 
@@ -368,15 +359,15 @@ def encode_split(
                 sample_counter += 1
                 pbar.update(1)
 
-                if encoded_count % 10 == 0:
+                if processed_count % 10 == 0:
                     h5f.flush()
                     csv_file.flush()
 
         except KeyboardInterrupt:
-            logger.warning("Encoding interrupted by user")
+            logger.warning("Processing interrupted by user")
             success = False
         except Exception as e:
-            logger.error(f"Error during encoding: {e}")
+            logger.error(f"Error during processing: {e}")
             success = False
         finally:
             h5f.flush()
@@ -395,43 +386,72 @@ def encode_split(
             success = False
 
     logger.info(
-        f"Encoded {encoded_count} new samples for {split_name} split (total: {existing_count + encoded_count})"
+        f"Processed {processed_count} new samples for {split_name} split (total: {existing_count + processed_count})"
     )
     return success
 
 
 def main(args: argparse.Namespace):
     # Create output directory
-    dataset_name = "DeepSpeak_v1_1"
-    root_dir = create_or_validate_directories(args.save_dir, dataset_name)
+    if args.dataset == "SWAN_DF" and args.resolutions is not None:
+        assert None not in args.resolutions, "Resolutions cannot be None"
+        ds_name = "SWAN_DF_" + "_".join(args.resolutions)
+    else:
+        ds_name = args.dataset
+    root_dir = create_or_validate_directories(args.save_dir, ds_name)
 
     # Dump configuration
     config = {
-        "data_dir": args.data_dir,
-        "preprocessed": True,
-        "video_encoder": "AdaFace",
-        "audio_encoder": "ReDimNet",
+        "window_len": args.window_len,
+        "window_step": args.window_step,
+        "video_preprocessor": "ImagePreprocessor",
+        "audio_preprocessor": "AudioPreprocessor",
+        "video_encoder": "AdaFace" if args.encode else None,
+        "audio_encoder": "ReDimNet" if args.encode else None,
     }
+    
+    if args.resolutions:
+        config["resolutions"] = args.resolutions
 
-    with open(root_dir / "encoding_config.json", "w") as f:
+    with open(root_dir / "processing_config.json", "w") as f:
         json.dump(config, f, indent=2)
 
+    # Load processors
+    try:
+        vid_proc = ImagePreprocessor(
+            window_len=args.window_len,
+            step=args.window_step,
+            head_pose_dir="../../../models/head_pose",
+        )
+        aud_proc = AudioPreprocessor(window_len=args.window_len, step=args.window_step)
+    except Exception as e:
+        logger.error(f"Failed to initialize processors: {e}")
+        return
+
     # Load encoders if needed
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    img_encoder, aud_encoder = load_encoders(device)
+    img_encoder, aud_encoder = load_encoders(args.encode)
 
     # Prepare datasets
-    ds_kwargs = {
-        "data_dir": args.data_dir,
-        "preprocessed": True,
-        "sample_mode": "sequence",
+    ds_common = {
+        "video_processor": vid_proc,
+        "audio_processor": aud_proc,
+        "mode": "minimal",
     }
+    
+    if args.dataset == "SWAN_DF":
+        ds_specific = {
+            "root_df": "../../../data/SWAN-DF",
+            "root_real": "../../../data/SWAN-Idiap",
+            "resolutions": [f"{res}x{res}" for res in args.resolutions],
+        }
+    else:
+        ds_specific = {}
 
     logger.info("Loading datasets...")
     datasets = {}
     try:
         for split in ["train", "dev", "test"]:
-            datasets[split] = get_dataset(dataset_name, split=split, **ds_kwargs)
+            datasets[split] = get_dataset(args.dataset, split=split, **ds_common, **ds_specific)
     except Exception as e:
         logger.error(f"Failed to load datasets: {e}")
         return
@@ -439,7 +459,7 @@ def main(args: argparse.Namespace):
     # Process each split
     all_success = True
     for split_name, ds in datasets.items():
-        success = encode_split(
+        success = process_split(
             ds,
             split_name,
             root_dir,
@@ -447,18 +467,17 @@ def main(args: argparse.Namespace):
             aud_encoder,
             resume=args.resume,
             force=args.force,
-            device=device,
         )
         if not success:
             all_success = False
             logger.warning(
-                f"Encoding for {split_name} split did not complete successfully"
+                f"Processing for {split_name} split did not complete successfully"
             )
 
     if all_success:
-        logger.info("All Encoding completed successfully!")
+        logger.info("All processing completed successfully!")
     else:
-        logger.warning("Encoding completed with errors. Check logs for details.")
+        logger.warning("Processing completed with errors. Check logs for details.")
 
 
 if __name__ == "__main__":

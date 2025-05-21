@@ -11,7 +11,8 @@ import pandas as pd
 from tqdm import tqdm
 
 from synthweave.utils.datasets import get_dataset
-from pipe import ImagePreprocessor, AudioPreprocessor
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from src.pipe import ImagePreprocessor, AudioPreprocessor
 
 # Configure logging
 logging.basicConfig(
