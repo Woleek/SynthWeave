@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 
-from typing import List
+from typing import Dict, List, Optional
 from .modules import MMDBlock
 from ..base import BaseFusion
-from ...utils.modules import LazyLinearXavier
+from ...utils.modules import LazyLinearXavier, LinearXavier
 from ... import logger
 
 """
@@ -24,8 +24,8 @@ class MMD(BaseFusion):
     self-attention and feed-forward sub-layers to generate discriminative and
     modality-enhanced representations.
 
-    Based on: "Multi-Modal Joint-Decoder for Robust Visual Question Answering"
-    Source: https://arxiv.org/abs/2310.13103
+    Based on: "AVoiD-DF: Audio-Visual Joint Learning for Detecting Deepfake"
+    Source: https://ieeexplore.ieee.org/abstract/document/10081373
 
     Attributes:
         unify_layers: ModuleList of projection layers for each modality
@@ -40,10 +40,15 @@ class MMD(BaseFusion):
     def __init__(
         self,
         output_dim: int,
-        n_modals: int,
-        dropout: bool = True,
+        modality_keys: List[str],
+        input_dims: Optional[Dict[str, int]] = None,
+        bias: bool = True,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
-        num_layers: int = 3,
+        hidden_proj_dim: Optional[int] = None,
+        out_proj_dim: Optional[int] = None,
+        normalize_proj: bool = True,
+        **kwargs,
     ) -> None:
         """Initialize the MMD module.
 
@@ -57,28 +62,31 @@ class MMD(BaseFusion):
         Note:
             Logs a warning message with the number of layers initialized
         """
-        super(MMD, self).__init__(dropout, unify_embeds)
-        self._num_layers = num_layers
-        logger.warning(f"MMD initialized with {num_layers} layers.")
-
-        # Projection layers to project each modality into a common space
-        if self._unify_embeds:
-            self.unify_layers = nn.ModuleList(
-                [LazyLinearXavier(output_dim) for _ in range(n_modals)]
-            )
-        else:
-            self.unify_layers = nn.ModuleList([nn.Identity() for _ in range(n_modals)])
+        super(MMD, self).__init__(
+            output_dim,
+            modality_keys,
+            input_dims,
+            bias,
+            dropout_p,
+            unify_embeds,
+            hidden_proj_dim,
+            out_proj_dim,
+            normalize_proj,
+        )
+        self._num_layers = kwargs.get("num_layers", 3)
+        logger.info(f"MMD initialized with {self._num_layers} layers.")
+        
+        num_att_heads: int = kwargs.get("num_att_heads", 1)
 
         # Stack L layers of MMDBlock
         self.blocks = nn.ModuleList(
-            [MMDBlock(output_dim) for _ in range(self._num_layers)]
+            [MMDBlock(self.proj_dim, num_att_heads, dropout_p) for _ in range(self._num_layers)]
         )
-
-        # Dropout
-        if self._dropout:
-            self.dropout = nn.Dropout(0.5)
-        else:
-            self.dropout = nn.Identity()
+        
+        # Final projection layer
+        self.fc_layer = LinearXavier(
+            self.proj_dim * len(modality_keys), output_dim, bias
+        )
 
     def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
         """Forward pass for the MMD module.
@@ -91,24 +99,20 @@ class MMD(BaseFusion):
             torch.Tensor: Fused representation with shape (batch_size, n_modals * embed_dim)
 
         Process:
-            1. Projects each modality into common space
-            2. Applies dropout to projected embeddings
-            3. Passes through L MMDBlock layers
-            4. Concatenates refined modality features
+            1. Passes through L MMDBlock layers
+            2. Concatenates refined modality features
         """
-        # Project inputs into a common space
-        proj_embeds = [
-            unify_layer(embed)
-            for unify_layer, embed in zip(self.unify_layers, embeddings)
-        ]
-
-        proj_embeds = [self.dropout(embed) for embed in proj_embeds]
-
+        emb_list = [embeddings[k].unsqueeze(1) for k in self.modalities] # list[(B, 1, PROJ)]
+        
         # Pass through L MMDBlocks
         for block in self.blocks:
-            proj_embeds = block(proj_embeds)
+            emb_list = block(emb_list) # list length preserved
 
         # Concatenate the refined modality features
-        fusion_vector = torch.cat(proj_embeds, dim=-1)
+        cls_tokens = [emb[:, 0] for emb in emb_list] # list[(B, PROJ)]
+        fusion_vector = torch.cat(cls_tokens, dim=1) # (B, M * PROJ)
+        
+        # Final projection layer
+        fusion_vector = self.fc_layer(fusion_vector)
 
         return fusion_vector

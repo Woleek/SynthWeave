@@ -1,3 +1,4 @@
+from typing import List
 import torch
 import torch.nn as nn
 from ...utils.modules import LinearXavier
@@ -27,19 +28,17 @@ class SelfAttention(nn.Module):
         softmax: Softmax layer for attention weights
     """
 
-    def __init__(self, modal_dim):
+    def __init__(self, modal_dim, n_heads=1, dropout_p=0.1):
         """Initialize the SelfAttention module.
 
         Args:
             modal_dim: Dimension of the input features
         """
         super(SelfAttention, self).__init__()
-        self.Wq = LinearXavier(modal_dim, modal_dim)
-        self.Wk = LinearXavier(modal_dim, modal_dim)
-        self.Wv = LinearXavier(modal_dim, modal_dim)
-        self.scale = 1 / (modal_dim**0.5)
-
-        self.softmax = nn.Softmax(dim=-1)
+        self.mha = nn.MultiheadAttention(modal_dim, n_heads,
+                                           dropout=dropout_p, batch_first=True)
+        
+        self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, Z):
         """Forward pass of the self-attention mechanism.
@@ -56,10 +55,9 @@ class SelfAttention(nn.Module):
             3. Apply softmax to get attention weights
             4. Compute weighted sum of values
         """
-        Q = self.Wq(Z)
-        K = self.Wk(Z)
-        V = self.Wv(Z)
-        Z_hat = self.softmax(torch.matmul(Q, K.transpose(-2, -1)) * self.scale) @ V
+        Z_hat, _ = self.mha(Z, Z, Z)
+        Z_hat = self.dropout(Z_hat)
+        
         return Z_hat
 
 
@@ -75,7 +73,7 @@ class FeedForward(nn.Module):
         relu: ReLU activation function
     """
 
-    def __init__(self, modal_dim, d_ff):
+    def __init__(self, modal_dim, d_ff, dropout_p=0.1):
         """Initialize the FeedForward module.
 
         Args:
@@ -87,6 +85,8 @@ class FeedForward(nn.Module):
         self.linear2 = LinearXavier(d_ff, modal_dim)
 
         self.relu = nn.ReLU()
+        
+        self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, x):
         """Forward pass of the feed-forward network.
@@ -97,7 +97,7 @@ class FeedForward(nn.Module):
         Returns:
             torch.Tensor: Transformed features of shape (batch_size, seq_len, modal_dim)
         """
-        return self.linear2(self.relu(self.linear1(x)))
+        return self.dropout(self.linear2(self.relu(self.linear1(x))))
 
 
 class BiCroAttention(nn.Module):
@@ -114,21 +114,19 @@ class BiCroAttention(nn.Module):
         softmax: Softmax layer for attention weights
     """
 
-    def __init__(self, modal_dim):
+    def __init__(self, modal_dim, n_heads=1, dropout_p=0.1):
         """Initialize the BiCroAttention module.
 
         Args:
             modal_dim: Dimension of the input features
         """
         super(BiCroAttention, self).__init__()
-        self.Wq = LinearXavier(modal_dim, modal_dim)
-        self.Wk = LinearXavier(modal_dim, modal_dim)
-        self.Wv = LinearXavier(modal_dim, modal_dim)
-        self.scale = 1 / (modal_dim**0.5)
+        self.mha = nn.MultiheadAttention(modal_dim, n_heads,
+                                           dropout=dropout_p, batch_first=True)
+        self.out   = nn.Linear(modal_dim, modal_dim, bias=True)
+        self.drop  = nn.Dropout(dropout_p)
 
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, P_i: torch.Tensor, *P_others: list[torch.Tensor]) -> torch.Tensor:
+    def forward(self, P: list[torch.Tensor]) -> torch.Tensor:
         """Compute bi-directional cross-attention for the i-th modality.
 
         Args:
@@ -146,21 +144,19 @@ class BiCroAttention(nn.Module):
                 - Apply attention to values
             3. Concatenate attended features
         """
-        Qi = self.Wq(P_i)
-        Ki = self.Wk(P_i)
-        Vi = self.Wv(P_i)
+        outs: List[torch.Tensor] = []
 
-        attended_inputs = []
-        for P_j in P_others:  # Iterate over all other modalities
-            Qj = self.Wq(P_j)
-            Kj = self.Wk(P_j)
-            Vj = self.Wv(P_j)
-
-            attended_inputs.append(
-                self.softmax(torch.matmul(Qi, Kj.transpose(-2, -1)) * self.scale) @ Vj
-            )
-
-        return torch.cat(attended_inputs, dim=-1)
+        for i, Pi in enumerate(P):
+            cross_sum = 0.0
+            for j, Pj in enumerate(P):
+                if i == j: # skip self
+                    continue
+                # Q comes from j, K/V from i
+                att, _ = self.mha(query=Pj, key=Pi, value=Pi)
+                cross_sum = cross_sum + att
+            cross_avg = cross_sum / (len(P) - 1) # mean over others
+            outs.append(self.drop(self.out(cross_avg))) # (B, T, EMB)
+        return outs
 
 
 class MMDBlock(nn.Module):
@@ -176,7 +172,7 @@ class MMDBlock(nn.Module):
         ln1, ln2, ln3: Layer normalization layers
     """
 
-    def __init__(self, modality_dim) -> None:
+    def __init__(self, modality_dim, num_att_heads=1, dropout_p=0.1) -> None:
         """Initialize the MMDBlock.
 
         Args:
@@ -184,19 +180,22 @@ class MMDBlock(nn.Module):
         """
         super(MMDBlock, self).__init__()
 
-        self.bi_cro_att = BiCroAttention(modality_dim)
-        self.self_att = SelfAttention(modality_dim)
-        self.ff = FeedForward(modality_dim, modality_dim)
-
+        self.bi_cro_att = BiCroAttention(modality_dim, num_att_heads, dropout_p)
         self.ln1 = nn.LayerNorm(modality_dim)
+        
+        self.self_att = SelfAttention(modality_dim, num_att_heads, dropout_p)
         self.ln2 = nn.LayerNorm(modality_dim)
+        
+        self.ff = FeedForward(modality_dim, 4*modality_dim, dropout_p)
         self.ln3 = nn.LayerNorm(modality_dim)
+        
+        self.dropout = nn.Dropout(dropout_p)
 
-    def forward(self, proj_embeds: list[torch.Tensor]) -> list[torch.Tensor]:
+    def forward(self, tensors: list[torch.Tensor]) -> list[torch.Tensor]:
         """Forward pass for a single MMDBlock.
 
         Args:
-            proj_embeds: List of projected embeddings from each modality
+            tensors: List of embeddings from each modality
 
         Returns:
             list[torch.Tensor]: List of refined embeddings for each modality
@@ -206,25 +205,16 @@ class MMDBlock(nn.Module):
             2. Apply SelfAtt with residual connection and layer norm
             3. Apply FeedForward with residual connection and layer norm
         """
-        attended_embeds = [
-            self.ln1(
-                proj_embeds[i]
-                + self.bi_cro_att(
-                    proj_embeds[i],
-                    *[proj_embeds[j] for j in range(len(proj_embeds)) if j != i],
-                )
-            )
-            for i in range(len(proj_embeds))
-        ]
+        # 1) cross-modal
+        cross_outs = self.bi_cro_att(tensors) # list[(B,T,d)]
+        x1 = [self.ln1(t + c) for t, c in zip(tensors, cross_outs)]
 
-        refined_embeds = [
-            self.ln2(attended_embeds[i] + self.self_att(attended_embeds[i]))
-            for i in range(len(attended_embeds))
-        ]
+        # 2) self-att per modality
+        self_outs = [self.self_att(t) for t in x1] # list[(B,T,d)]
+        x2 = [self.ln2(t + self.dropout(sa)) for t, sa in zip(x1, self_outs)]
 
-        refined_embeds = [
-            self.ln3(refined_embeds[i] + self.ff(refined_embeds[i]))
-            for i in range(len(refined_embeds))
-        ]
+        # 3) feed-forward
+        ff_outs = [self.ff(t) for t in x2]
+        x3 = [self.ln3(t + self.dropout(ff)) for t, ff in zip(x2, ff_outs)]
 
-        return refined_embeds
+        return x3 # same list length
