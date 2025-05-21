@@ -50,7 +50,6 @@ class DeepfakeDetector(pl.LightningModule):
         contr_loss_fused_weight: float = 0.0,
         contr_loss_mod_weight: float = 0.0,
         aam_loss_weight: float = 0.0,
-        learnable_loss_weights: bool = False,
         lr_scheduler_name: str = None,
     ):
         super().__init__()
@@ -60,22 +59,12 @@ class DeepfakeDetector(pl.LightningModule):
         self.lr = lr
         self.lr_scheduler_name = lr_scheduler_name
         
-        if learnable_loss_weights:
-            self.loss_w = torch.nn.ParameterDict(
-                {
-                    "cls": torch.nn.Parameter(torch.tensor(cls_loss_weight), requires_grad=True),
-                    "contr_fused": torch.nn.Parameter(torch.tensor(contr_loss_fused_weight, requires_grad=True)),
-                    "contr_mod": torch.nn.Parameter(torch.tensor(contr_loss_mod_weight, requires_grad=True)),
-                    "aam": torch.nn.Parameter(torch.tensor(aam_loss_weight), requires_grad=True),
-                }
-            )
-        else:
-            self.loss_w = {
-                "cls": cls_loss_weight,
-                "contr_fused": contr_loss_fused_weight,
-                "contr_mod": contr_loss_mod_weight,
-                "aam": aam_loss_weight,
-            }
+        self.loss_w = {
+            "cls": cls_loss_weight,
+            "contr_fused": contr_loss_fused_weight,
+            "contr_mod": contr_loss_mod_weight,
+            "aam": aam_loss_weight,
+        }
 
         self.metrics: Dict[str, Dict[str, torch.nn.Module]] = {}
         metric_kwargs = (
@@ -301,20 +290,12 @@ class DeepfakeDetector(pl.LightningModule):
         self._update_metrics(stage, preds, prob, y)
 
         # Total loss
-        if isinstance(self.loss_w, torch.nn.ParameterDict):
-            loss = (
-                cls_loss * F.softplus(self.loss_w["cls"])
-                + fused_contr_loss * F.softplus(self.loss_w["contr_fused"])
-                + mod_contr_loss * F.softplus(self.loss_w["contr_mod"])
-                + aam_loss * F.softplus(self.loss_w["aam"])
-            )
-        else:
-            loss = (
-                cls_loss * self.loss_w["cls"]
-                + fused_contr_loss * self.loss_w["contr_fused"]
-                + mod_contr_loss * self.loss_w["contr_mod"]
-                + aam_loss * self.loss_w["aam"]
-            )
+        loss = (
+            cls_loss * self.loss_w["cls"]
+            + fused_contr_loss * self.loss_w["contr_fused"]
+            + mod_contr_loss * self.loss_w["contr_mod"]
+            + aam_loss * self.loss_w["aam"]
+        )
 
         if stage == "train":
             # Log individual losses
@@ -338,11 +319,6 @@ class DeepfakeDetector(pl.LightningModule):
                 if self.loss_w["aam"] > 0.0
                 else None
             )
-            
-            # Log loss weights if learnable
-            if isinstance(self.loss_w, torch.nn.ParameterDict):
-                for name, param in self.loss_w.items():
-                    self.log(f"{stage}/{name}_loss_weight", param, prog_bar=False)
 
         self.log(f"{stage}/loss", loss, prog_bar=(stage == "train"))
         return loss
@@ -449,12 +425,6 @@ def parse_args():
         help="Weight for AAM loss",
     )
     parser.add_argument(
-        "--learnable_loss_weights",
-        action="store_true",
-        default=False,
-        help="Use learnable loss weights",
-    )
-    parser.add_argument(
         "--dropout",
         type=float,
         default=0.1,
@@ -469,6 +439,8 @@ def parse_args():
     )
 
     # Dataset
+    parser.add_argument("--dataset", choices=["DeepSpeak_v1_1", "SWAN_DF"],
+                   required=True, help="Which dataset to load")
     parser.add_argument("--window_len", type=int, default=4)
     parser.add_argument("--window_step", type=int, default=1)
     parser.add_argument("--clip_mode", type=str, default="id", choices=["id", "idx"])
@@ -526,6 +498,9 @@ def main(args: argparse.Namespace):
             "preprocessed": True,
             "sample_mode": "single",
         }
+        
+        if args.dataset == "SWAN_DF":
+            ds_kwargs["av_codes"] = ["00", "11"]
     else:
         vid_proc = ImagePreprocessor(
             window_len=args.window_len,
@@ -542,13 +517,14 @@ def main(args: argparse.Namespace):
         }
 
     dm = get_datamodule(
-        "DeepSpeak_v1_1",
+        args.dataset,
         batch_size=args.batch_size,
         dataset_kwargs=ds_kwargs,
         sample_mode="single",  # single, sequence
         clip_mode=args.clip_mode,  # 'id', 'idx'
         clip_to=args.clip_to,  # 'min', int
         clip_selector=args.clip_selector,  # 'first', 'random'
+        balance_classes=(args.dataset == "SWAN_DF")
     )
 
     # PREPARE PIPELINE
@@ -578,6 +554,7 @@ def main(args: argparse.Namespace):
             torch.nn.Linear(EMB_DIM, 1), torch.nn.Sigmoid()
         )
     elif args.task == "fine-grained":
+        assert args.dataset != "SWAN_DF", "Fine-grained task is not supported for SWAN_DF, as it has only RA-RV and FA-FV classes."
         detection_head = torch.nn.Sequential(
             torch.nn.Linear(EMB_DIM, 4), torch.nn.Softmax(dim=1)
         )
@@ -603,10 +580,10 @@ def main(args: argparse.Namespace):
         Learning Rate: {args.lr:.2e}
         Contrastive Loss: {True if (args.contr_loss_mod_w or args.contr_loss_fused_w) else False}
         Margin Loss: {True if args.aam_loss_w > 0.0 else False}
-        Learnable Loss Weights: {args.learnable_loss_weights}
         Dropout: {args.dropout}
     
     [DATASET]
+        Dataset: {args.dataset}
         Preprocessed: {args.preprocessed}
         Encoded: {args.encoded}
         Source: {args.data_dir}
@@ -620,8 +597,8 @@ def main(args: argparse.Namespace):
     )
 
     # PREPARE TRAINER
-    run_name = f"{args.task}/{args.fusion}"
     log_base_dir = "logs"
+    run_name = f"{args.dataset}/{args.task}/{args.fusion}"
     log_path = os.path.join(log_base_dir, run_name)
 
     if args.resume and not args.dev:
@@ -653,12 +630,11 @@ def main(args: argparse.Namespace):
         contr_loss_fused_weight=args.contr_loss_fused_w,
         contr_loss_mod_weight=args.contr_loss_mod_w,
         aam_loss_weight=args.aam_loss_w,
-        learnable_loss_weights=args.learnable_loss_weights,
         lr_scheduler_name=args.scheduler,
     )
 
     model_checkpoint = ModelCheckpoint(
-        monitor="val/f1",
+        monitor="val/auc",
         mode="max",
         save_last=True,
         save_top_k=1,
@@ -686,12 +662,6 @@ def main(args: argparse.Namespace):
 
     if not args.dev:
         trainer.test(model, datamodule=dm, ckpt_path="best")
-
-    # optim_vars = {
-    #     id(p) for g in trainer.optimizers[0].param_groups for p in g["params"]
-    # }
-    # for name, p in model.named_parameters():
-    #     print(name, id(p) in optim_vars)
 
 
 if __name__ == "__main__":

@@ -436,6 +436,9 @@ def main(args: argparse.Namespace):
         "preprocessed": True,
         "sample_mode": "sequence",
     }
+    
+    if args.dataset == "SWAN_DF":
+        ds_kwargs["av_codes"] = ["00", "11"]
 
     logger.info("Loading datasets...")
     datasets = {}
