@@ -1,154 +1,237 @@
 import argparse
-import json
-import os
-import re
+from typing import Dict
 import torch
-
-from pathlib import Path
-from unimodal import AdaFace, ReDimNet
-from pipe import MultiModalAuthPipeline, ImagePreprocessor, AudioPreprocessor
+from src.pipe import MultiModalAuthPipeline, ImagePreprocessor, AudioPreprocessor, AdaFace, ReDimNet
 from synthweave.utils.datasets import get_datamodule
 from synthweave.utils.fusion import get_fusion
-from synthweave.fusion import FusionType
-import pytorch_lightning as pl
+from pathlib import Path
+import json
+from tqdm.auto import tqdm
+from torchmetrics.classification import (
+    Accuracy,
+    Precision,
+    Recall,
+    F1Score,
+    AveragePrecision, 
+    AUROC
+)
 from pytorch_lightning.trainer import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
 
-from train import DeepfakeDetector
+class dotdict(dict):
+    def __getattr__(self, name):
+        return self[name]
 
-torch.set_float32_matmul_precision("medium")
+    def __setattr__(self, name, value):
+        self[name] = value
+        
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+def parse_args():
 
-FUSION = input("Fusion name: ").strip().upper()
-
-CHECKPOINT_ROOT = Path("./logs/binary")
-checkpoint = [*(CHECKPOINT_ROOT / FUSION).rglob("**/epoch=*.ckpt")]
-# sort by version
-checkpoint.sort(key=lambda x: int(re.search(r"version_(\d+)", str(x)).group(1)))
-if len(checkpoint) == 1:
-    checkpoint = checkpoint[0]
-else:
-    version = input(f"Version number (Aval: {list(range(len(checkpoint)))}): ").strip()
-    checkpoint = checkpoint[int(version)]
-
-
-def load_saved_hyperparams(ckpt_path: str) -> dict:
-    """Find `args.json` three levels above the checkpoint file."""
-    version_dir = os.path.abspath(os.path.join(ckpt_path, os.pardir, os.pardir))
-    args_file = os.path.join(version_dir, "args.json")
-    if not os.path.isfile(args_file):
-        raise FileNotFoundError(f"Could not locate {args_file}")
-    with open(args_file) as f:
-        return json.load(f)
-
-
-saved_args = load_saved_hyperparams(checkpoint)
-
-
-def build_pipeline(cfg):
-    emb_dim = cfg["emb_dim"]
-
-    # Backbones
-    if cfg["encoded"]:
-        models = {"audio": torch.nn.Identity(), "video": torch.nn.Identity()}
-    else:
-        models = {
-            "audio": ReDimNet(freeze=True),
-            "video": AdaFace(path="../../../models/", freeze=True),
-        }
-
-    # Fusion + detection head
-    fusion = get_fusion(
-        fusion_name=cfg["fusion"],
-        output_dim=emb_dim,
-        modality_keys=["video", "audio"],
-        out_proj_dim=cfg["proj_dim"],
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="encoded_data/DeepSpeak_v1_1",
+        help="Path to the data directory.",
     )
-    if cfg["task"] == "binary":
+    parser.add_argument(
+        "--fusion", 
+        type=str,
+        required=True,
+        help="Fusion method to evaluate.",
+    )
+    parser.add_argument(
+        "--task",
+        type=str,
+        required=True,
+        choices=["binary", "fine-grained"],
+        help="Task type.",
+    )
+
+    return parser.parse_args()
+
+def setup(args: argparse.Namespace):
+    
+    ds_kwargs = {
+        "data_dir": args.data_dir,
+        "preprocessed": True,
+        "sample_mode": "sequence",
+    }
+
+    dm = get_datamodule(
+        "DeepSpeak_v1_1",
+        batch_size=1, # NOTE: currently single window fusions don't ignore padding
+        dataset_kwargs=ds_kwargs,
+        sample_mode="sequence",
+        # clip_mode = None,
+        # pad_mode = 'zeros'
+    )
+
+    dm.setup()
+
+    FUSION = args.fusion
+    TASK = args.task
+
+    path = Path("logs") / TASK / FUSION
+    path = sorted(path.glob("version_*"))[-1]
+    
+    print(f"Loading model: '{FUSION}' for task '{TASK}' from {path}")
+
+    # config
+    model_args = json.loads((path / "args.json").read_text())
+    model_args = dotdict(model_args)
+
+    # best checkpoint
+    ckpt = path / "checkpoints"
+    ckpt = sorted(ckpt.glob("epoch=*.ckpt"))[-1]
+
+
+    models = {"audio": torch.nn.Identity(), "video": torch.nn.Identity()}
+    EMB_DIM = model_args.emb_dim
+
+    fusion = get_fusion(
+        fusion_name=FUSION,
+        output_dim=EMB_DIM,
+        modality_keys=["video", "audio"],
+        out_proj_dim=model_args.proj_dim,
+        num_att_heads=4,  # only for attention-based fusions
+        dropout=model_args.dropout,
+    )
+
+    if TASK == "binary":
         detection_head = torch.nn.Sequential(
-            torch.nn.Linear(emb_dim, 1), torch.nn.Sigmoid()
+            torch.nn.Linear(EMB_DIM, 1), torch.nn.Sigmoid()
         )
-    else:  # fine-grained (4-way)
+    elif TASK == "fine-grained":
         detection_head = torch.nn.Sequential(
-            torch.nn.Linear(emb_dim, 4), torch.nn.Softmax(dim=1)
+            torch.nn.Linear(EMB_DIM, 4), torch.nn.Softmax(dim=1)
         )
 
-    return MultiModalAuthPipeline(
+    pipe = MultiModalAuthPipeline(
         models=models,
         fusion=fusion,
         detection_head=detection_head,
         freeze_backbone=True,
     )
 
+    state_dict = torch.load(ckpt, map_location="cpu")['state_dict']
+    state_dict = {k.replace("pipeline.", ""): v for k, v in state_dict.items()}
+    pipe.load_state_dict(state_dict, strict=False)
 
-pipeline = build_pipeline(saved_args)
-model = DeepfakeDetector(
-    pipeline=pipeline, detection_task=saved_args["task"], lr=saved_args["lr"]
-)
+    pipe = pipe.to(device)
+    pipe.eval();
 
+    return dm, pipe, path
 
-def build_datamodule(cfg):
-    if cfg["preprocessed"] or cfg["encoded"]:
-        ds_kwargs = {
-            "data_dir": cfg["data_dir"],
-            "preprocessed": True,
-            "sample_mode": "single",
-        }
-    else:
-        vid_proc = ImagePreprocessor(
-            window_len=cfg["window_len"],
-            step=cfg["window_step"],
-            head_pose_dir="../../../models/head_pose",
-        )
-        aud_proc = AudioPreprocessor(
-            window_len=cfg["window_len"], step=cfg["window_step"]
-        )
-        ds_kwargs = {
-            "video_processor": vid_proc,
-            "audio_processor": aud_proc,
-            "mode": "minimal",
-            "sample_mode": "single",
-        }
-
-    return get_datamodule(
-        "DeepSpeak_v1_1",
-        batch_size=cfg["batch_size"],
-        dataset_kwargs=ds_kwargs,
-        sample_mode="single",
-        clip_mode=None,
-        clip_to=None,
-        clip_selector=None,
-        num_workers=4,
+def get_metrics(task):
+    metrics: Dict[str, Dict[str, torch.nn.Module]] = {}
+    metric_kwargs = (
+        {"task": "binary"}
+        if task == "binary"
+        else {"task": "multiclass", "num_classes": 4, "average": "macro"}
     )
 
+    base = dict(
+        acc=Accuracy(**metric_kwargs),
+        prec=Precision(**metric_kwargs),
+        rec=Recall(**metric_kwargs),
+        f1=F1Score(**metric_kwargs),
+        ap=AveragePrecision(**metric_kwargs),
+        auc=AUROC(**metric_kwargs),
+    )
 
-dm = build_datamodule(saved_args)
-dm.setup()
+    for split in ("train", "val", "test"):
+        metrics[split] = {k: v.clone() for k, v in base.items()}
+        
+    for split_metrics in metrics.values():
+        for metric in split_metrics.values():
+            metric.to(device)
+        
+    return metrics
 
+def _update_metrics(metrics, probs, preds, labels, split):
+    if preds.ndim == 0:
+        preds = preds.unsqueeze(0)
+    if probs.ndim == 0:
+        probs = probs.unsqueeze(0)
+    if labels.ndim == 0:
+        labels = labels.unsqueeze(0)
+        
+    for k, metric in metrics[split].items():
+        if k in {"ap", "auc"}:
+            metric.update(probs, labels)
+        else:
+            metric.update(preds, labels)
+            
+def _eval_split(loader, pipe, metrics, split, task):
+    for sample in tqdm(loader, desc=split):
+        sample["video"] = sample["video"].squeeze(0).to(device)
+        sample["audio"] = sample["audio"].squeeze(0).to(device)
 
-trainer = Trainer(
-    accelerator="cuda" if torch.cuda.is_available() else "cpu", devices=1, logger=False
-)
+        with torch.no_grad():
+            out = pipe(sample)
+            
+            probs = out["logits"]
+            
+            # Average logits (soft aggregation)
+            if task == "binary":
+                final_prob = torch.mean(probs)
+                final_pred = (final_prob > 0.5).long()
+            else:
+                final_prob = torch.mean(probs, dim=0)
+                final_pred = torch.argmax(final_prob)
+            
+            gt = sample['metadata']["label"].to(device)
+            
+            _update_metrics(metrics, final_prob, final_pred, gt, split)
+            
+def save_metrics(metrics, path):
+    for split, split_metrics in metrics.items():
+        for k, v in split_metrics.items():
+            v = v.compute()
+            v = v.item()
+            metrics[split][k] = v
 
+    with open(path, "w") as f:
+        json.dump(metrics, f, indent=4)
 
-dataloaders = [dm.train_dataloader(), dm.val_dataloader(), dm.test_dataloader()]
-all_results = {}
-
-print("▶  Running evaluation on all splits...")
-
-for dl in dataloaders:
-    split = dl.dataset.split
-    print(f"→ Evaluating split: {split}")
-
-    # Run
-    results = trainer.test(model=model, dataloaders=dl, ckpt_path=checkpoint)
-
-    results = {key.split("/")[-1]: val for key, val in results[0].items()}
-
-    all_results[split] = results
-print("✔️  Evaluation done.")
-
-
-results_json_path = os.path.join(checkpoint.parent.parent, f"results.json")
-with open(results_json_path, "w") as f:
-    json.dump(all_results, f, indent=4)
-
-print(f"✔️ Results saved to: {results_json_path}")
+def evaluate(dm, pipe, metrics):
+    
+    # TRAIN SET
+    train_loader = dm.train_dataloader()
+    _eval_split(train_loader, pipe, metrics, "train", args.task)
+    print("Train Set Metrics")
+    for k, v in metrics["train"].items():
+        print(f"{k}: {v.compute().item(): .3f}")
+        
+    print("\n" + "-"*50 + "\n")
+        
+    # DEV SET
+    val_loader = dm.val_dataloader()
+    _eval_split(val_loader, pipe, metrics, "val", args.task)
+    print("Validation Set Metrics")
+    for k, v in metrics["val"].items():
+        print(f"{k}: {v.compute().item(): .3f}")
+        
+    print("\n" + "-"*50 + "\n")
+        
+    # TEST SET
+    test_loader = dm.test_dataloader()
+    _eval_split(test_loader, pipe, metrics, "test", args.task)
+    print("Test Set Metrics")
+    for k, v in metrics["test"].items():
+        print(f"{k}: {v.compute().item(): .3f}")
+        
+        
+if __name__ == "__main__":
+    args = parse_args()
+    dm, pipe, path = setup(args)
+    
+    metrics = get_metrics(args.task)
+    
+    evaluate(dm, pipe, metrics)
+    
+    save_metrics(metrics, path / "results.json")

@@ -29,12 +29,17 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Process and encode multimodal data")
 
     # Dataset options
+    parser.add_argument("--dataset", choices=["DeepSpeak_v1_1", "SWAN_DF"],
+                   required=True, help="Which dataset to load")
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./processed_data/DeepSpeak_v1_1",
+        required=True,
         help="Path to the dataset directory",
     )
+    # SWAN-DF specific
+    parser.add_argument("--resolutions",  nargs="*", default=None,
+                   help="Subset of fake resolutions to keep", choices=[None, "160", "256", "320"])
 
     # Save options
     parser.add_argument(
@@ -403,8 +408,12 @@ def encode_split(
 
 def main(args: argparse.Namespace):
     # Create output directory
-    dataset_name = "DeepSpeak_v1_1"
-    root_dir = create_or_validate_directories(args.save_dir, dataset_name)
+    if args.dataset == "SWAN_DF" and args.resolutions is not None:
+        assert None not in args.resolutions, "Resolutions cannot be None"
+        ds_name = "SWAN_DF_" + "_".join(args.resolutions)
+    else:
+        ds_name = args.dataset
+    root_dir = create_or_validate_directories(args.save_dir, ds_name)
 
     # Dump configuration
     config = {
@@ -432,7 +441,7 @@ def main(args: argparse.Namespace):
     datasets = {}
     try:
         for split in ["train", "dev", "test"]:
-            datasets[split] = get_dataset(dataset_name, split=split, **ds_kwargs)
+            datasets[split] = get_dataset(args.dataset, split=split, **ds_kwargs)
     except Exception as e:
         logger.error(f"Failed to load datasets: {e}")
         return

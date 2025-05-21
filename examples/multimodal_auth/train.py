@@ -4,8 +4,7 @@ import re
 import torch
 import argparse
 from typing import Dict, get_args, Literal
-from unimodal import AdaFace, ReDimNet
-from pipe import MultiModalAuthPipeline, ImagePreprocessor, AudioPreprocessor
+from src.pipe import MultiModalAuthPipeline, ImagePreprocessor, AudioPreprocessor, AdaFace, ReDimNet
 from synthweave.utils.datasets import get_datamodule
 from synthweave.utils.fusion import get_fusion
 from synthweave.fusion import FusionType
@@ -24,7 +23,7 @@ from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torchmetrics.functional.classification import binary_roc
 
-from pytorch_metric_learning.losses import SupConLoss, CrossBatchMemory
+from pytorch_metric_learning.losses import SupConLoss, CrossBatchMemory, ArcFaceLoss
 from pytorch_lightning import seed_everything
 
 
@@ -41,7 +40,6 @@ def _eer(probs: torch.Tensor, labels: torch.Tensor):
     idx = torch.argmin(torch.abs(fpr - frr))
     return 0.5 * (fpr[idx] + frr[idx])
 
-
 class DeepfakeDetector(pl.LightningModule):
     def __init__(
         self,
@@ -51,6 +49,8 @@ class DeepfakeDetector(pl.LightningModule):
         cls_loss_weight: float = 1.0,
         contr_loss_fused_weight: float = 0.0,
         contr_loss_mod_weight: float = 0.0,
+        aam_loss_weight: float = 0.0,
+        learnable_loss_weights: bool = False,
         lr_scheduler_name: str = None,
     ):
         super().__init__()
@@ -58,12 +58,24 @@ class DeepfakeDetector(pl.LightningModule):
         self.add_module("pipeline", pipeline)
         self.task = detection_task
         self.lr = lr
-        self.loss_w = {
-            "cls": cls_loss_weight,
-            "contr_fused": contr_loss_fused_weight,
-            "contr_mod": contr_loss_mod_weight,
-        }
         self.lr_scheduler_name = lr_scheduler_name
+        
+        if learnable_loss_weights:
+            self.loss_w = torch.nn.ParameterDict(
+                {
+                    "cls": torch.nn.Parameter(torch.tensor(cls_loss_weight), requires_grad=True),
+                    "contr_fused": torch.nn.Parameter(torch.tensor(contr_loss_fused_weight, requires_grad=True)),
+                    "contr_mod": torch.nn.Parameter(torch.tensor(contr_loss_mod_weight, requires_grad=True)),
+                    "aam": torch.nn.Parameter(torch.tensor(aam_loss_weight), requires_grad=True),
+                }
+            )
+        else:
+            self.loss_w = {
+                "cls": cls_loss_weight,
+                "contr_fused": contr_loss_fused_weight,
+                "contr_mod": contr_loss_mod_weight,
+                "aam": aam_loss_weight,
+            }
 
         self.metrics: Dict[str, Dict[str, torch.nn.Module]] = {}
         metric_kwargs = (
@@ -147,6 +159,13 @@ class DeepfakeDetector(pl.LightningModule):
                     #     embedding_size=self.pipeline.fusion.proj_dim,
                     #     memory_size=512 # queue size
                     # )
+                elif loss == "aam":
+                    self.aam_loss = ArcFaceLoss(
+                        num_classes=2 if self.task == "binary" else 4,
+                        embedding_size=self.pipeline.fusion.output_dim,
+                        margin=0.5,
+                        scale=30,
+                    )
 
     def forward(self, batch):
         return self.pipeline(batch)
@@ -271,17 +290,34 @@ class DeepfakeDetector(pl.LightningModule):
             # cls_loss = F.cross_entropy(prob, y)
             cls_loss = self.cls_loss(prob, y)
             preds = torch.argmax(prob, dim=1)
+            
+        # AAM loss
+        aam_loss = 0.0
+        if self.loss_w["aam"] > 0.0:
+            aam_loss = self.aam_loss(
+                out["embedding"], y.long()
+            )
 
         self._update_metrics(stage, preds, prob, y)
 
         # Total loss
-        loss = (
-            cls_loss * self.loss_w["cls"]
-            + fused_contr_loss * self.loss_w["contr_fused"]
-            + mod_contr_loss * self.loss_w["contr_mod"]
-        )
+        if isinstance(self.loss_w, torch.nn.ParameterDict):
+            loss = (
+                cls_loss * F.softplus(self.loss_w["cls"])
+                + fused_contr_loss * F.softplus(self.loss_w["contr_fused"])
+                + mod_contr_loss * F.softplus(self.loss_w["contr_mod"])
+                + aam_loss * F.softplus(self.loss_w["aam"])
+            )
+        else:
+            loss = (
+                cls_loss * self.loss_w["cls"]
+                + fused_contr_loss * self.loss_w["contr_fused"]
+                + mod_contr_loss * self.loss_w["contr_mod"]
+                + aam_loss * self.loss_w["aam"]
+            )
 
         if stage == "train":
+            # Log individual losses
             (
                 self.log(f"{stage}/cls_loss", cls_loss)
                 if self.loss_w["cls"] > 0.0
@@ -297,6 +333,16 @@ class DeepfakeDetector(pl.LightningModule):
                 if self.loss_w["contr_mod"] > 0.0
                 else None
             )
+            (
+                self.log(f"{stage}/aam_loss", aam_loss)
+                if self.loss_w["aam"] > 0.0
+                else None
+            )
+            
+            # Log loss weights if learnable
+            if isinstance(self.loss_w, torch.nn.ParameterDict):
+                for name, param in self.loss_w.items():
+                    self.log(f"{stage}/{name}_loss_weight", param, prog_bar=False)
 
         self.log(f"{stage}/loss", loss, prog_bar=(stage == "train"))
         return loss
@@ -335,6 +381,7 @@ class DeepfakeDetector(pl.LightningModule):
                 mode="max",
                 factor=0.1,
                 patience=5,  # TODO: test other values
+                threshold=0.001
             )
 
             lr_scheduler_config = {
@@ -369,7 +416,7 @@ def parse_args():
     parser.add_argument("--max_epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument(
-        "--task", type=str, default="binary", choices=["binary", "fine-grained"]
+        "--task", type=str, required=True, choices=["binary", "fine-grained"]
     )
     parser.add_argument(
         "--resume",
@@ -396,6 +443,18 @@ def parse_args():
         help="Weight for contrastive loss on fused features",
     )
     parser.add_argument(
+        "--aam_loss_w",
+        type=float,
+        default=0.2,
+        help="Weight for AAM loss",
+    )
+    parser.add_argument(
+        "--learnable_loss_weights",
+        action="store_true",
+        default=False,
+        help="Use learnable loss weights",
+    )
+    parser.add_argument(
         "--dropout",
         type=float,
         default=0.1,
@@ -404,7 +463,7 @@ def parse_args():
     parser.add_argument(
         "--scheduler",
         type=str,
-        default="cosine",
+        default="plateau",
         choices=["cosine", "plateau", None],
         help="Learning rate scheduler",
     )
@@ -435,7 +494,7 @@ def parse_args():
 
     # Fusion
     parser.add_argument(
-        "--fusion", type=str, default="CFF", choices=get_args(FusionType)
+        "--fusion", type=str, required=True, choices=get_args(FusionType)
     )
     parser.add_argument(
         "--emb_dim",
@@ -458,6 +517,9 @@ def parse_args():
 
 def main(args: argparse.Namespace):
     # PREPARE DATALODER
+    if args.encoded:
+        args.preprocessed = True
+    
     if args.preprocessed or args.encoded:
         ds_kwargs = {
             "data_dir": args.data_dir,
@@ -507,6 +569,7 @@ def main(args: argparse.Namespace):
         modality_keys=["video", "audio"],
         out_proj_dim=args.proj_dim,
         num_att_heads=4,  # only for attention-based fusions
+        n_layers=3,  # only for MMD
         dropout=args.dropout,
     )
 
@@ -539,10 +602,12 @@ def main(args: argparse.Namespace):
         Batch Size: {args.batch_size}
         Learning Rate: {args.lr:.2e}
         Contrastive Loss: {True if (args.contr_loss_mod_w or args.contr_loss_fused_w) else False}
+        Margin Loss: {True if args.aam_loss_w > 0.0 else False}
+        Learnable Loss Weights: {args.learnable_loss_weights}
         Dropout: {args.dropout}
     
     [DATASET]
-        Preprocessed: {args.preprocessed or args.encoded}
+        Preprocessed: {args.preprocessed}
         Encoded: {args.encoded}
         Source: {args.data_dir}
         Window Length: {args.window_len}
@@ -587,6 +652,9 @@ def main(args: argparse.Namespace):
         cls_loss_weight=args.cls_loss_w,
         contr_loss_fused_weight=args.contr_loss_fused_w,
         contr_loss_mod_weight=args.contr_loss_mod_w,
+        aam_loss_weight=args.aam_loss_w,
+        learnable_loss_weights=args.learnable_loss_weights,
+        lr_scheduler_name=args.scheduler,
     )
 
     model_checkpoint = ModelCheckpoint(
