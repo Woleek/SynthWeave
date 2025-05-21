@@ -2,17 +2,20 @@ from collections import defaultdict
 import json
 import numbers
 import os
+import re
 import h5py
 from pathlib import Path
-from typing import Callable, Literal, Optional
+from typing import Callable, Dict, List, Literal, Optional, Type
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from pytorch_lightning import LightningDataModule
 from datasets import load_dataset, ClassLabel
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import GroupShuffleSplit
+from numpy.random import default_rng
 
-from synthweave.utils.tools import read_json, read_video
+from synthweave.utils.tools import read_audio, read_json, read_video
 
 
 # =============================================================================
@@ -46,27 +49,46 @@ class DeepSpeak_v1_1_Dataset(Dataset):
 
     def _prepare_dataset(self, split: str):
         if split == "test":
-            dataset = load_dataset(
-                "faridlab/deepspeak_v1_1", trust_remote_code=True, split=split
+            ds = load_dataset(
+                "faridlab/deepspeak_v1_1",
+                trust_remote_code=True,
+                split=split
             )
-            unique_labels = dataset.unique("type")
+            unique_labels = ds.unique("type")
             class_label = ClassLabel(names=sorted(unique_labels))
-            dataset = dataset.cast_column("type", class_label)
-            self.dataset = dataset
-        else:
-            dataset = load_dataset(
-                "faridlab/deepspeak_v1_1", trust_remote_code=True, split="train"
+            self.dataset = ds.cast_column("type", class_label)
+        else: # train/dev
+            ds = load_dataset(
+                "faridlab/deepspeak_v1_1",
+                trust_remote_code=True,
+                split="train",
             )
-            unique_labels = dataset.unique("type")
-            class_label = ClassLabel(names=sorted(unique_labels))
-            dataset = dataset.cast_column("type", class_label)
-            split_dataset = dataset.train_test_split(
-                test_size=0.1, seed=42, shuffle=True, stratify_by_column="type"
+
+            class_label = ClassLabel(names=sorted(ds.unique("type")))
+            ds = ds.cast_column("type", class_label)
+            
+            def add_id(example):
+                """Extract the *target* identity for every clip."""
+                t = class_label.int2str(example["type"])
+                if t == "fake":
+                    example["id_target"] = example["metadata-fake"]["identity-target"]
+                else:                       # real clip
+                    example["id_target"] = example["metadata-real"]["identity"]
+                return example
+            
+            ds = ds.map(add_id, desc="Add id_target column")
+            groups = ds["id_target"]
+            gss = GroupShuffleSplit(
+                n_splits=1,
+                test_size=0.1,       # 10 % of identities → dev
+                random_state=42
             )
+            train_idx, dev_idx = next(gss.split(X=groups, groups=groups))
+            
             if split == "train":
-                self.dataset = split_dataset["train"]
+                self.dataset = ds.select(train_idx)
             elif split == "dev":
-                self.dataset = split_dataset["test"]
+                self.dataset = ds.select(dev_idx)
 
     def __len__(self):
         return len(self.dataset)
@@ -151,160 +173,237 @@ class DeepSpeak_v1_1_Dataset(Dataset):
         return {"video": video, "audio": audio, "metadata": meta}
 
 
-class DeepSpeak_v1_1_DataModule(LightningDataModule):
-    def __init__(
-        self,
-        batch_size: int = 32,
-        num_workers: int = 0,
-        sample_mode: Literal["single", "sequence"] = "single",
-        dataset_kwargs: dict = {},
-        encode_ids: bool = True,
-        # BATCH BALANCING
-        clip_mode: Optional[Literal["id", "idx"]] = None,
-        clip_to: Literal["min"] | int = "min",  # 'max' if padding will be added
-        clip_selector: Literal["first", "random"] = "random",
-        # pad_mode: Optional[Literal['repeat', 'zeros']] = None
-    ):
-        super().__init__()
+# class DeepSpeak_v1_1_DataModule(LightningDataModule):
+#     def __init__(
+#         self,
+#         batch_size: int = 32,
+#         num_workers: int = 0,
+#         sample_mode: Literal["single", "sequence"] = "single",
+#         dataset_kwargs: dict = {},
+#         encode_ids: bool = True,
+#         # BATCH BALANCING
+#         clip_mode: Optional[Literal["id", "idx"]] = None,
+#         clip_to: None | Literal["min"] | int = None, # None == 'max'
+#         clip_selector: Literal["first", "random"] = "random",
+#         # PADDING (sequence mode)
+#         pad_mode: Optional[Literal['repeat', 'zeros']] = 'repeat',
+#         seq_len: None | Literal["min"] | int = None, # None == 'max'
+#     ):
+#         super().__init__()
 
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.dataset_kwargs = dataset_kwargs
-        self.sample_mode = sample_mode
-        self.encode_ids = encode_ids
-        if self.encode_ids:
-            self.id_encoder = LabelEncoder()
+#         self.batch_size = batch_size
+#         self.num_workers = num_workers
+#         self.dataset_kwargs = dataset_kwargs
+#         self.sample_mode = sample_mode
+#         self.encode_ids = encode_ids
+#         if self.encode_ids:
+#             self.id_encoder = LabelEncoder()
 
-        self.clip_to = clip_to
-        self.clip_mode = clip_mode
-        self.clip_selector = clip_selector
+#         self.clip_to = clip_to
+#         self.clip_mode = clip_mode
+#         self.clip_selector = clip_selector
+#         self.pad_mode = pad_mode
+#         self.seq_len = seq_len
 
-    def setup(self, stage: str = None):
-        if stage == "fit" or stage is None:
-            self.train_dataset = DeepSpeak_v1_1_Dataset("train", **self.dataset_kwargs)
-            self.val_dataset = DeepSpeak_v1_1_Dataset("dev", **self.dataset_kwargs)
+#     def setup(self, stage: str = None):
+#         if stage == "fit" or stage is None:
+#             self.train_dataset = DeepSpeak_v1_1_Dataset("train", **self.dataset_kwargs)
+#             self.val_dataset = DeepSpeak_v1_1_Dataset("dev", **self.dataset_kwargs)
 
-        if stage == "test" or stage is None:
-            self.test_dataset = DeepSpeak_v1_1_Dataset("test", **self.dataset_kwargs)
+#         if stage == "test" or stage is None:
+#             self.test_dataset = DeepSpeak_v1_1_Dataset("test", **self.dataset_kwargs)
 
-    def _collate_fn(self, batch: list) -> dict:
-        # 1. Single mode - each window is a separate sample
-        # NOTE: Need to ensure that some ID wont dominate batch - e.g. when some videos are much longer than others
-        # TRY 1: set max number of samples per ID/video
-        # TRY 2: clip to min number of samples per ID/video in current batch
+#     def _collate_fn(self, batch: list) -> dict:
+#         """
+#         Balancing logic
+#         ───────────────
+#         1.  Groups are formed with 'clip_mode' key:
+#             - clip_mode="id"  →  identity  (meta["id_source"])
+#             - clip_mode="idx" →  each item by its original sample idx
+#             - otherwise       →  single bucket ("default")
+#         2.  For every group we keep at most *K* sequences, where *K* is defined by 'clip_to':
+#             - clip_to="min"  →  K = min(group sizes in the batch)
+#             - clip_to=<int>  →  K = clip_to
+#             - clip_to=None   →  keep everything
+#         3.  If a group has more than *K* clips, the clips are selected
+#             according to `clip_selector`:
+#             - clip_selector="first"  →  first *K* clips
+#             - clip_selector="random" →  random *K* clips
+#         4.  (Sequence mode) The remaining clips are then trimmed or padded in time to length L, so they can be stacked into one tensor. Controled by 'pad_mode':
+#             - pad_mode="repeat"  →  repeat sequence to fill the time dimension
+#             - pad_mode="zeros"   →  pad with zeros to fill the time dimension
+#         and 'seq_len':
+#             - seq_len="min"  →  L = min(len of sequences in the batch)
+#             - seq_len=<int>  →  L = seq_len
+#             - seq_len=None   →  keep full length of all sequences
+        
+#         """
+#         def bucket_key(meta, idx):
+#             if self.clip_mode == "id":
+#                 return meta["id_source"]
+#             if self.clip_mode == "idx":
+#                 return idx
+#             return "default"
 
-        if self.sample_mode == "single":
-            # Helper: build dict of lists based on grouping key
-            def group_by_key(samples, key_fn):
-                grouped = defaultdict(list)
-                for i, sample in enumerate(samples):
-                    vid_windows = sample["video"]
-                    aud_windows = sample["audio"]
-                    meta = sample["metadata"]
-                    key = key_fn(meta, i)
-                    grouped[key].append((vid_windows, aud_windows, meta))
-                return grouped
+#         def limit_bucket(items):
+#             """Select at most *K* elements from a list according to clip_selector."""
+#             if K is None or len(items) <= K:
+#                 return items
+#             if self.clip_selector == "random":
+#                 sel = np.random.choice(len(items), K, replace=False)
+#                 sel.sort()
+#                 return [items[i] for i in sel]
+#             return items[:K]  # "first"
 
-            # Choose grouping strategy
-            if self.clip_mode == "id":
-                key_fn = lambda meta, i: meta["id_source"]
-            elif self.clip_mode == "idx":
-                key_fn = lambda meta, i: i
-            else:
-                key_fn = lambda meta, i: "default"
+#         def pad_or_trim(v, a, target_len):
+#             """Return (video, audio) clipped or padded to *target_len* frames."""
+#             cur_len = v.shape[0]
+#             # trim ---------------------------------------------------------
+#             if cur_len > target_len:
+#                 if self.clip_selector == "random":
+#                     start = np.random.randint(0, cur_len - target_len + 1)
+#                     v, a = v[start : start + target_len], a[start : start + target_len]
+#                 else:
+#                     v, a = v[:target_len], a[:target_len]
+#             # pad ----------------------------------------------------------
+#             elif cur_len < target_len:
+#                 pad_len = target_len - cur_len
+#                 if self.pad_mode == "repeat":
+#                     v_pad = v[-1:].repeat(pad_len, *([1] * (v.ndim - 1)))
+#                     a_pad = a[-1:].repeat(pad_len, *([1] * (a.ndim - 1)))
+#                 else:
+#                     v_pad = torch.zeros((pad_len, *v.shape[1:]), dtype=v.dtype)
+#                     a_pad = torch.zeros((pad_len, *a.shape[1:]), dtype=a.dtype)
+#                 v, a = torch.cat([v, v_pad]), torch.cat([a, a_pad])
+#             return v, a
+        
+#         # Construct buckets based on clip_mode
+#         buckets = defaultdict(list)
+#         for idx, sample in enumerate(batch):
+#             buckets[bucket_key(sample["metadata"], idx)].append(sample)
+            
+#         # Decide how many clips to keep per bucket
+#         if self.clip_to == "min":
+#             K = min(len(v) for v in buckets.values())
+#         elif isinstance(self.clip_to, int):
+#             K = self.clip_to
+#         else:
+#             K = None  # keep all
+            
+#         if self.sample_mode == "single":
+#             video_ts, audio_ts, meta_list = [], [], []
+#             for bucket_items in buckets.values():
+#                 # flatten windows inside every sample first
+#                 windows = [
+#                     (vw, aw, meta)
+#                     for s in limit_bucket(bucket_items)
+#                     for vw, aw, meta in zip(s["video"], s["audio"], [s["metadata"]] * len(s["video"]))
+#                 ]
 
-            grouped = group_by_key(batch, key_fn)
+#                 # Select windows from buckets
+#                 N = len(windows)
+#                 clip_val = N if K is None else min(K, N) if isinstance(K, int) else K
+#                 if self.clip_selector == "random" and clip_val < N:
+#                     sel = np.random.choice(N, clip_val, replace=False)
+#                     sel.sort()
+#                     windows = [windows[i] for i in sel]
+#                 else:
+#                     windows = windows[:clip_val]
 
-            video_stacks, audio_stacks, meta_flat_list = [], [], []
+#                 # Stack windows
+#                 if windows:
+#                     v_stack = torch.stack([w[0] for w in windows])
+#                     a_stack = torch.stack([w[1] for w in windows])
+#                     video_ts.append(v_stack)
+#                     audio_ts.append(a_stack)
+#                     meta_list.extend([w[2] for w in windows])
 
-            for key, group in grouped.items():
-                vids, auds, metas = [], [], []
+#             if not video_ts:  # empty batch? → skip
+#                 return None
 
-                for vid_windows, aud_windows, meta in group:
-                    vids.extend(vid_windows)
-                    auds.extend(aud_windows)
-                    metas.extend([meta] * len(vid_windows))
+#             videos = torch.cat(video_ts, 0)
+#             audios = torch.cat(audio_ts, 0)
 
-                # Clipping
-                if self.clip_to == "min":
-                    clip_val = min(len(vids), len(auds))
-                elif isinstance(self.clip_to, int):
-                    clip_val = min(self.clip_to, len(vids))
-                else:
-                    clip_val = len(vids)
+#         elif self.sample_mode == "sequence":
+            
+#             # Select clips from buckets
+#             selected = [s for bucket in buckets.values() for s in limit_bucket(bucket)]
+#             if not selected:
+#                 return None
+            
+#             # Collect video/audio/metadata
+#             vids, auds, meta_list, lengths = [], [], [], []
+#             for s in selected:
+#                 vids.append(s["video"])
+#                 auds.append(s["audio"])
+#                 meta_list.append(s["metadata"])
+#                 lengths.append(s["video"].shape[0]) # number of windows
+                
+#             # Determine target temporal length
+#             if self.seq_len == "min":
+#                 L = min(lengths)
+#             elif isinstance(self.seq_len, int):
+#                 L = self.seq_len
+#             else:  # seq_len is None → pad to longest
+#                 L = max(lengths)
 
-                if self.clip_selector == "random" and clip_val < len(vids):
-                    selected = np.random.choice(len(vids), clip_val, replace=False)
-                    selected.sort()
-                else:
-                    selected = list(range(clip_val))
+#             # Pad or trim sequences
+#             vids_padded, auds_padded = zip(*(pad_or_trim(v, a, L) for v, a in zip(vids, auds)))
+#             videos = torch.stack(list(vids_padded), 0)
+#             audios = torch.stack(list(auds_padded), 0)
+            
+#         else:
+#             raise ValueError(f"Invalid sample mode: {self.sample_mode}")
+        
+#         # Organize metadata into dict of lists
+#         metas = {k: [m[k] for m in meta_list] for k in meta_list[0]}
+        
+#         if self.sample_mode == "sequence":
+#             metas["length"] = torch.as_tensor(lengths, dtype=torch.long)
 
-                if clip_val > 0:
-                    video_stacks.append(torch.stack([vids[i] for i in selected]))
-                    audio_stacks.append(torch.stack([auds[i] for i in selected]))
-                    meta_flat_list.extend([metas[i] for i in selected])
+#         # Encode IDs if enabled
+#         if self.encode_ids:
+#             ids = metas["id_source"] + metas["id_target"]
+#             self.id_encoder.fit(ids)
+#             metas["id_source"] = self.id_encoder.transform(metas["id_source"])
+#             metas["id_target"] = self.id_encoder.transform(metas["id_target"])
+#             self.id_encoder = LabelEncoder()  # Reset for next batch
 
-            if not video_stacks or not audio_stacks:
-                return None  # skip empty batch
+#         # Tensorize metadata fields where appropriate
+#         for k, v_list in metas.items():
+#             if isinstance(v_list[0], (int, np.integer, numbers.Integral)):
+#                 metas[k] = torch.as_tensor(v_list, dtype=torch.long)
+#             elif isinstance(v_list[0], (float, np.floating, numbers.Real)):
+#                 metas[k] = torch.as_tensor(v_list, dtype=torch.float)
+#             else:
+#                 metas[k] = v_list  # keep as list of strings or other types
 
-            videos = torch.cat(video_stacks, dim=0)
-            audios = torch.cat(audio_stacks, dim=0)
+#         return {"video": videos, "audio": audios, "metadata": metas}
 
-            # Organize metadata into dict of lists
-            metas = {k: [meta[k] for meta in meta_flat_list] for k in meta_flat_list[0]}
+#     def train_dataloader(self):
+#         return DataLoader(
+#             self.train_dataset,
+#             batch_size=self.batch_size,
+#             num_workers=self.num_workers,
+#             shuffle=True,
+#             collate_fn=self._collate_fn,
+#         )
 
-        # 2. Sequence mode - each sequence of windows from the same video is a separate sample
-        # NOTE: Need to handle various lenghts of sequences
-        # TRY 1: clip/pad to min/max length with repeat/zeros (can cause issues with methods analyzing transitions)
-        elif self.sample_mode == "sequence":
-            raise NotImplementedError("Sequence mode not implemented yet")
+#     def val_dataloader(self):
+#         return DataLoader(
+#             self.val_dataset,
+#             batch_size=self.batch_size,
+#             num_workers=self.num_workers,
+#             collate_fn=self._collate_fn,
+#         )
 
-        else:
-            raise ValueError(f"Invalid sample mode: {self.sample_mode}")
-
-        # Encode IDs if enabled
-        if self.encode_ids:
-            ids = metas["id_source"] + metas["id_target"]
-            self.id_encoder.fit(ids)
-            metas["id_source"] = self.id_encoder.transform(metas["id_source"])
-            metas["id_target"] = self.id_encoder.transform(metas["id_target"])
-            self.id_encoder = LabelEncoder()  # Reset for next batch
-
-        # Tensorize metadata fields where appropriate
-        for k, v_list in metas.items():
-            if isinstance(v_list[0], (int, np.integer, numbers.Integral)):
-                metas[k] = torch.as_tensor(v_list, dtype=torch.long)
-            elif isinstance(v_list[0], (float, np.floating, numbers.Real)):
-                metas[k] = torch.as_tensor(v_list, dtype=torch.float)
-            else:
-                metas[k] = v_list  # keep as list of strings or other types
-
-        return {"video": videos, "audio": audios, "metadata": metas}
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            shuffle=True,
-            collate_fn=self._collate_fn,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            collate_fn=self._collate_fn,
-        )
-
-    def test_dataloader(self):
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            collate_fn=self._collate_fn,
-        )
+#     def test_dataloader(self):
+#         return DataLoader(
+#             self.test_dataset,
+#             batch_size=self.batch_size,
+#             num_workers=self.num_workers,
+#             collate_fn=self._collate_fn,
+#         )
 
 
 class DeepSpeak_v1_1_Dataset_prep(Dataset):
@@ -390,6 +489,8 @@ class DeepSpeak_v1_1_DataModule_prep(LightningDataModule):
         clip_mode: Optional[Literal["id", "idx"]] = None,
         clip_to: Literal["min"] | int = "min",
         clip_selector: Literal["first", "random"] = "random",
+        pad_mode: Optional[Literal['repeat', 'zeros']] = 'repeat',
+        seq_len: None | Literal["min"] | int = None,
         dataset_kwargs: dict = {},
     ):
         super().__init__()
@@ -400,6 +501,8 @@ class DeepSpeak_v1_1_DataModule_prep(LightningDataModule):
         self.clip_mode = clip_mode
         self.clip_to = clip_to
         self.clip_selector = clip_selector
+        self.pad_mode = pad_mode
+        self.seq_len = seq_len
         self.dataset_kwargs = dataset_kwargs
 
         if encode_ids:
@@ -418,83 +521,130 @@ class DeepSpeak_v1_1_DataModule_prep(LightningDataModule):
             )
 
     def _collate_fn(self, batch):
+        def bucket_key(meta, idx):
+            if self.clip_mode == "id":
+                return meta["id_source"]
+            if self.clip_mode == "idx":
+                return idx
+            return "default"
+
+        def limit(items, K):
+            """Select at most *K* elements from a list according to clip_selector."""
+            if K is None or len(items) <= K:
+                return items
+            if self.clip_selector == "random":
+                sel = np.random.choice(len(items), K, replace=False)
+                sel.sort()
+                return [items[i] for i in sel]
+            return items[:K]          # "first"
+
+        def pad_or_trim(v, a, T):
+            """Return (video, audio) with temporal length exactly *T*."""
+            L = v.shape[0]
+
+            # trim
+            if L > T:
+                if self.clip_selector == "random":
+                    start = np.random.randint(0, L - T + 1)
+                    v, a = v[start : start + T], a[start : start + T]
+                else:
+                    v, a = v[:T], a[:T]
+
+            # pad
+            elif L < T:
+                pad = T - L
+                if self.pad_mode == "repeat":
+                    v_pad = v[-1:].repeat(pad, *([1] * (v.ndim - 1)))
+                    a_pad = a[-1:].repeat(pad, *([1] * (a.ndim - 1)))
+                else:  # "zeros"
+                    v_pad = torch.zeros((pad, *v.shape[1:]), dtype=v.dtype)
+                    a_pad = torch.zeros((pad, *a.shape[1:]), dtype=a.dtype)
+                v, a = torch.cat([v, v_pad]), torch.cat([a, a_pad])
+
+            return v, a
+
+        # Construct buckets based on clip_mode
+        buckets = defaultdict(list)
+        for idx, s in enumerate(batch):
+            buckets[bucket_key(s["metadata"], idx)].append(s)
+
+        # Decide how many clips to keep per bucket
+        if self.clip_to == "min":
+            K = min(len(v) for v in buckets.values())
+        elif isinstance(self.clip_to, int):
+            K = self.clip_to
+        else:                      # None → no limit
+            K = None
+
         if self.sample_mode == "single":
-            batch_vid = defaultdict(list)
-            batch_aud = defaultdict(list)
-            batch_meta = defaultdict(list)
+            vid_ts, aud_ts, meta_list = [], [], []
 
-            for i, sample in enumerate(batch):
-                video, audio, meta = (
-                    sample["video"],
-                    sample["audio"],
-                    sample["metadata"],
-                )
-                key = {"id": meta["id_source"], "idx": i}.get(self.clip_mode, "default")
+            for bucket in buckets.values():
+                # Each sample already is one window
+                kept = limit(bucket, K)
+                if not kept:
+                    continue
 
-                batch_vid[key].append(video)
-                batch_aud[key].append(audio)
-                batch_meta[key].extend([meta] * len([video]))
+                vids = torch.stack([s["video"] for s in kept])
+                auds = torch.stack([s["audio"] for s in kept])
+                metas = [s["metadata"] for s in kept]
 
-            if self.clip_to == "min":
-                clip_val = min(len(v) for v in batch_vid.values())
-            elif isinstance(self.clip_to, int):
-                clip_val = self.clip_to
-            else:
-                clip_val = None  # no clipping
+                vid_ts.append(vids)
+                aud_ts.append(auds)
+                meta_list.extend(metas)
 
-            video_stacks, audio_stacks, meta_flat = [], [], []
+            if not vid_ts: # nothing left → skip batch
+                return None
 
-            for key in batch_vid:
-                v = batch_vid[key]
-                a = batch_aud[key]
-                m = batch_meta[key]
-
-                n = len(v)
-                if clip_val is not None and clip_val < n:
-                    if self.clip_selector == "random":
-                        selected = np.random.choice(n, clip_val, replace=False)
-                        selected.sort()
-                    else:
-                        selected = list(range(clip_val))
-
-                    v = [v[i] for i in selected]
-                    a = [a[i] for i in selected]
-                    m = [m[i] for i in selected]
-
-                if v and a:
-                    video_stacks.append(torch.stack(v))
-                    audio_stacks.append(torch.stack(a))
-                    meta_flat.extend(m)
-
-            if not video_stacks:
-                return None  # Lightning will skip empty batches
-
-            videos = torch.cat(video_stacks, dim=0)
-            audios = torch.cat(audio_stacks, dim=0)
+            videos = torch.cat(vid_ts, 0)
+            audios = torch.cat(aud_ts, 0)
 
         elif self.sample_mode == "sequence":
-            raise NotImplementedError("Sequence mode not implemented yet")
+            selected = [s for bucket in buckets.values() for s in limit(bucket, K)]
+            if not selected:
+                return None
 
+            vids, auds, meta_list, lengths = [], [], [], []
+            for s in selected:
+                vids.append(s["video"])
+                auds.append(s["audio"])
+                meta_list.append(s["metadata"])
+                lengths.append(s["video"].shape[0])
+
+            # Decide target temporal length
+            if self.seq_len == "min":
+                T = min(lengths)
+            elif isinstance(self.seq_len, int):
+                T = self.seq_len
+            else: # None → pad to longest
+                T = max(lengths)
+
+            vids_pad, auds_pad = zip(*(pad_or_trim(v, a, T) for v, a in zip(vids, auds)))
+            videos = torch.stack(list(vids_pad), 0)
+            audios = torch.stack(list(auds_pad), 0)
+            
         else:
             raise ValueError(f"Invalid sample mode: {self.sample_mode}")
 
-        # Organize metadata
-        metas = {k: [m[k] for m in meta_flat] for k in meta_flat[0]}
+        # Organize metadata into dict of lists
+        metas = {k: [m[k] for m in meta_list] for k in meta_list[0]}
+        if self.sample_mode == "sequence":
+            metas["length"] = torch.as_tensor(lengths, dtype=torch.long)
 
+        # Optional ID encoding
         if self.encode_ids:
-            all_ids = metas["id_source"] + metas["id_target"]
-            self.id_encoder.fit(all_ids)
+            ids = metas["id_source"] + metas["id_target"]
+            self.id_encoder.fit(ids)
             metas["id_source"] = self.id_encoder.transform(metas["id_source"])
             metas["id_target"] = self.id_encoder.transform(metas["id_target"])
-            self.id_encoder = LabelEncoder()  # Reset for next batch
+            self.id_encoder = LabelEncoder()  # reset for next batch
 
-        for k, v_list in metas.items():
-            if isinstance(v_list[0], (int, np.integer, numbers.Integral)):
-                metas[k] = torch.as_tensor(v_list, dtype=torch.long)
-            elif isinstance(v_list[0], (float, np.floating, numbers.Real)):
-                metas[k] = torch.as_tensor(v_list, dtype=torch.float)
-            else:
-                metas[k] = v_list
+        # Convert numeric lists → tensors
+        for k, v in metas.items():
+            if isinstance(v[0], (int, np.integer, numbers.Integral)):
+                metas[k] = torch.as_tensor(v, dtype=torch.long)
+            elif isinstance(v[0], (float, np.floating, numbers.Real)):
+                metas[k] = torch.as_tensor(v, dtype=torch.float)
 
         return {"video": videos, "audio": audios, "metadata": metas}
 
@@ -531,6 +681,490 @@ class DeepSpeak_v1_1_DataModule_prep(LightningDataModule):
         for ds in ["train_dataset", "val_dataset", "test_dataset"]:
             if hasattr(self, ds):
                 getattr(self, ds).close()
+                
+
+# =============================================================================
+#                SWAN-DF  +  SWAN-Idiap  Dataset  (protocol-aware)
+# =============================================================================
+class SWAN_DF_Dataset(Dataset):
+    """
+    Reads the identity protocols generated with *make_swan_df_protocols.py*.
+
+    Parameters
+    ----------
+    protocol_dir : Path
+        Directory that contains the **three** lists:
+        ├── train_identities.txt
+        ├── dev_identities.txt
+        └── test_identities.txt
+
+    split : "train" | "dev" | "test"
+        Keeps samples whose `id_target` appears in the corresponding list.
+    """
+    _RE_REAL = re.compile(
+    r"(?P<site>[1-5])_(?P<id>\d{5})_(?P<gender>[mf])_(?P<session>\d{2})_"
+    r"(?P<rec>\d{2})_(?P<device>[pt])_(?P<bio>[1234])\.", re.X)
+
+    _RE_FAKE = re.compile(
+        r"(?P<prefix>[^-]+)-(?P<model>model_\d+d)-(?P<train>[^-]+)-"
+        r"(?P<blend>[^-]+)-to-(?P<target>\d{5})\.", re.X)
+
+    def __init__(
+        self,
+        split: Literal["train", "dev", "test"],
+        root_df: str | Path,
+        root_real: str | Path,
+        *,
+        protocol_dir: str | Path = "swan_df_protocols",
+        video_processor: Optional[Callable] = None,
+        audio_processor: Optional[Callable] = None,
+        resolutions: Optional[set[str] | list[str]] = None,
+        use_wav_audio: bool = False,
+        mode: Literal["minimal", "full"] = "minimal",
+    ):
+        super().__init__()
+        self.split = split
+        self.mode  = mode
+        self.video_processor = video_processor
+        self.audio_processor = audio_processor
+        self.keep_res = None if resolutions is None else set(resolutions if isinstance(resolutions, (list, set)) else [resolutions])
+        self.use_wav_audio = use_wav_audio
+
+        # read the protocol files
+        proto = Path(root_df) / protocol_dir
+        train_ids = self._read_id_list(proto / "train_identities.txt")
+        dev_ids   = self._read_id_list(proto / "dev_identities.txt")
+        test_ids  = self._read_id_list(proto / "test_identities.txt")
+
+        # sanity check – no leaks
+        if not (train_ids.isdisjoint(dev_ids | test_ids) and dev_ids.isdisjoint(test_ids)):
+            raise ValueError("train / dev / test identity lists overlap!")
+
+        target_sets = {"train": train_ids, "dev": dev_ids, "test": test_ids}
+        wanted_ids  = target_sets[split]
+
+        # index fake and real samples
+        fake_samples = self._index_swan_df(Path(root_df))
+        real_samples = self._index_swan_real(Path(root_real))
+
+        # keep only the identities we want for *this* split
+        self.samples = [
+            s for s in (fake_samples + real_samples)
+            if s["id_target"] in wanted_ids
+        ]
+
+        if not self.samples:
+            raise RuntimeError(f"No samples found for split='{split}'. "
+                               "Check your protocol lists and paths.")
+            
+        # pre-compute per-sample weights (for dataloder balancing)
+        cls_counts = {"0": 0, "1": 0}
+        for s in self.samples:
+            cls_counts[s["label"]] += 1
+        inv_freq = {lbl: 1.0 / n for lbl, n in cls_counts.items()} # inverse frequency
+        self.sample_weights = [inv_freq[s["label"]] for s in self.samples]
+
+        # label encoders
+        self.encoders = {
+            "label": LabelEncoder().fit(["0", "1"]),
+            "av"   : LabelEncoder().fit(["00", "11"]), # only FA-FV in SWAN-DF
+        }
+        
+    def _read_id_list(self, path: Path) -> set[str]:
+        if not path.exists():
+            raise FileNotFoundError(f"Required protocol file missing: {path}")
+        return {ln.strip() for ln in path.read_text().splitlines() if ln.strip()}
+
+    def _index_swan_df(self, root: Path) -> List[Dict]:
+        """
+        Walk   videos/<RES>/<SRC_ID>/*.mp4   and, if present,
+        audios/wav/<SRC_ID>/*.wav
+        """
+        # index the fake samples
+        vids_root = root / "videos"
+        wavs_root = root / "audios/wav"
+        
+        samples: List[Dict] = []
+        for res_dir in vids_root.iterdir(): # 160x160 / …
+            if not res_dir.is_dir():
+                continue
+            if self.keep_res and res_dir.name not in self.keep_res: # skip unwanted resolutions
+                continue
+            for src_dir in res_dir.iterdir(): # 00001 / 00002 …
+                if not src_dir.is_dir():
+                    continue
+                src_id = src_dir.name
+                for mp4 in src_dir.glob("*.mp4"):
+                    m = self._RE_FAKE.search(mp4.name)
+                    if not m: # safety check
+                        continue
+                    tgt_id = m["target"]
+                    
+                    # optional matching WAV
+                    wav_path = None
+                    if self.use_wav_audio:
+                        maybe = list(
+                            (wavs_root / src_id).glob(f"{mp4.stem.split('-to-')[0]}*-to-{tgt_id}.wav")
+                        )
+                        if maybe:
+                            wav_path = str(maybe[0])
+                            
+                    samples.append(
+                        {
+                            "video_file": str(mp4),
+                            "audio_file": wav_path,
+                            "label": "1", "av": "11",
+                            "id_source": src_id,
+                            "id_target": m["target"],
+                            "metadata": {
+                                "video_file": str(mp4),
+                                "audio_file": wav_path,
+                                "resolution": res_dir.name,
+                                "model"     : m["model"],
+                                "train"     : m["train"],
+                                "blend"     : m["blend"],
+                            },
+                        }
+                    )
+        return samples
+
+    def _index_swan_real(self, root: Path) -> List[Dict]:
+        """
+        Walk SWAN-Idiap bona-fide videos only.
+        Path pattern:  …/IDIAP/session_XX/(iPad|iPhone)/<ID>/*.mp4
+        """
+        # index the real samples
+        idiap_dir = root / "IDIAP"
+        
+        samples: List[Dict] = []
+        for sess in idiap_dir.glob("session_*"):
+            for device in ("iPad", "iPhone"):
+                dev_dir = sess / device
+                if not dev_dir.is_dir():
+                    continue
+                for id_dir in dev_dir.iterdir():
+                    if not id_dir.is_dir():
+                        continue
+                    ident = id_dir.name
+                    for mp4 in id_dir.glob("*.mp4"):
+                        m = self._RE_REAL.search(mp4.name)
+                        if not m:
+                            continue
+                        bio_code = m.group("bio")
+                        if bio_code not in {"2"}: # keep voice (2) | skip face (1) and eye (3)
+                            continue
+                        
+                        samples.append(
+                            {
+                                "video_file": str(mp4),
+                                "audio_file": None, # embedded in the video
+                                "label": "0", 
+                                "av": "00",
+                                "id_source": ident,
+                                "id_target": ident,
+                                "metadata": {
+                                    "video_file": str(mp4),
+                                    "audio_file": None,
+                                    "session": sess.name,
+                                    "device" : device,
+                                    "site"   : m.group("site"),
+                                    "gender" : m.group("gender"),
+                                    "bio"    : bio_code,
+                                },
+                            }
+                        )
+        return samples
+
+    def __len__(self): return len(self.samples)
+
+    def __getitem__(self, idx: int):
+        s = self.samples[idx]
+        video, audio, info = read_video(s["video_file"])
+        
+        if s["audio_file"]:
+            audio, sr = read_audio(s["audio_file"])
+            info["audio_fps"] = sr
+
+        if self.video_processor:
+            video, vid_mask = self.video_processor(video, info["video_fps"])
+        if self.audio_processor:
+            audio, aud_mask = self.audio_processor(audio, info["audio_fps"])
+            
+        if self.video_processor and self.audio_processor:
+            L = min(len(video), len(audio))
+            video, audio = video[:L], audio[:L]
+            if "vid_mask" in locals():
+                joint = vid_mask[:L] & aud_mask[:L]
+                keep = joint.nonzero(as_tuple=False).squeeze(-1)
+                video, audio = video[keep], audio[keep]
+
+        meta = s["metadata"].copy()
+        meta.update(info)
+
+        if self.mode == "minimal":
+            meta = {
+                "label": self.encoders["label"].transform([s["label"]])[0],
+                "av"   : self.encoders["av"].transform([s["av"]])[0],
+                "id_source": s["id_source"],
+                "id_target": s["id_target"],
+            }
+
+        return {"video": video, "audio": audio, "metadata": meta}
+
+
+# ==============================================================================
+#                Generic DataModule
+# ==============================================================================
+class AVDataModule(LightningDataModule):
+    """
+    A generic DataModule for *any* audio-video dataset class that yields
+    ``{"video", "audio", "metadata"}``.
+
+    Parameters
+    ----------
+    dataset_cls : Dataset subclass
+        Pass either ``DeepSpeak_v1_1_Dataset`` or ``SWAN_DF_Dataset`` (or any
+        other compatible class).
+
+    dataset_kwargs : dict
+        Keyword args forwarded verbatim to the dataset constructor.
+
+    Supports sampling / padding / balancing parameters
+    """
+
+    def __init__(
+        self,
+        dataset_cls: Type[Dataset],
+        dataset_kwargs: dict,
+        *,
+        batch_size: int = 32,
+        num_workers: int = 0,
+        sample_mode: Literal["single", "sequence"] = "single",
+        encode_ids: bool = True,
+        balance_classes: bool = False,
+        # BATCH-BALANCING
+        clip_mode: Optional[Literal["id", "idx"]] = None,
+        clip_to: None | Literal["min"] | int = None, # None == 'max'
+        clip_selector: Literal["first", "random"] = "random",
+        clip_selector_seed: int = 42,
+        # TEMPORAL PADDING (sequence mode)
+        pad_mode: Optional[Literal["repeat", "zeros"]] = "repeat",
+        seq_len: None | Literal["min"] | int = None, # None == 'max'
+    ):
+        super().__init__()
+        self.dataset_cls    = dataset_cls
+        self.dataset_kwargs = dataset_kwargs
+        self.balance_classes = balance_classes
+
+        self.batch_size   = batch_size
+        self.num_workers  = num_workers
+        self.sample_mode  = sample_mode
+        self.encode_ids   = encode_ids
+        self.id_encoder   = LabelEncoder() if encode_ids else None
+
+        # balancing / padding knobs
+        self.clip_mode     = clip_mode
+        self.clip_to       = clip_to
+        self.clip_selector = clip_selector
+        self.clip_selector_seed = clip_selector_seed
+        self.pad_mode      = pad_mode
+        self.seq_len       = seq_len
+
+    def setup(self, stage: str | None = None):
+        if stage in ("fit", None):
+            self.train_dataset = self.dataset_cls(split="train", **self.dataset_kwargs)
+            self.val_dataset   = self.dataset_cls(split="dev",   **self.dataset_kwargs)
+                
+        if stage in ("test", None):
+            self.test_dataset  = self.dataset_cls(split="test",  **self.dataset_kwargs)
+
+    def _collate_fn(self, batch):
+        """
+        Balancing logic
+        ───────────────
+        1.  Groups are formed with 'clip_mode' key:
+            - clip_mode="id"  →  identity  (meta["id_source"])
+            - clip_mode="idx" →  each item by its original sample idx
+            - otherwise       →  single bucket ("default")
+        2.  For every group we keep at most *K* sequences, where *K* is defined by 'clip_to':
+            - clip_to="min"  →  K = min(group sizes in the batch)
+            - clip_to=<int>  →  K = clip_to
+            - clip_to=None   →  keep everything
+        3.  If a group has more than *K* clips, the clips are selected
+            according to `clip_selector`:
+            - clip_selector="first"  →  first *K* clips
+            - clip_selector="random" →  random *K* clips
+        4.  (Sequence mode) The remaining clips are then trimmed or padded in time to length L, so they can be stacked into one tensor. Controled by 'pad_mode':
+            - pad_mode="repeat"  →  repeat sequence to fill the time dimension
+            - pad_mode="zeros"   →  pad with zeros to fill the time dimension
+        and 'seq_len':
+            - seq_len="min"  →  L = min(len of sequences in the batch)
+            - seq_len=<int>  →  L = seq_len
+            - seq_len=None   →  keep full length of all sequences
+        """
+        rng = default_rng(self.clip_selector_seed)
+
+        def bucket_key(meta, idx):
+            if self.clip_mode == "id":
+                return meta["id_source"]
+            if self.clip_mode == "idx":
+                return idx
+            return "default"
+
+        def limit_bucket(items, k):
+            """Select at most *K* elements from a list according to clip_selector."""
+            if k is None or len(items) <= k:
+                return items
+            if self.clip_selector == "random":
+                idx = rng.choice(len(items), k, replace=False)
+                idx.sort()
+                return [items[i] for i in idx]
+            return items[:k]  # first
+
+        def pad_or_trim(v, a, target_len):
+            """Return (video, audio) clipped or padded to *target_len* frames."""
+            cur_len = v.shape[0]
+            
+            # trim
+            if cur_len > target_len:
+                if self.clip_selector == "random":
+                    start = rng.choice(0, cur_len - target_len + 1)
+                    v, a = v[start : start + target_len], a[start : start + target_len]
+                else:
+                    v, a = v[:target_len], a[:target_len]
+            # pad
+            elif cur_len < target_len:
+                pad_len = target_len - cur_len
+                if self.pad_mode == "repeat":
+                    v_pad = v[-1:].repeat(pad_len, *([1] * (v.ndim - 1)))
+                    a_pad = a[-1:].repeat(pad_len, *([1] * (a.ndim - 1)))
+                else:
+                    v_pad = torch.zeros((pad_len, *v.shape[1:]), dtype=v.dtype)
+                    a_pad = torch.zeros((pad_len, *a.shape[1:]), dtype=a.dtype)
+                v, a = torch.cat([v, v_pad]), torch.cat([a, a_pad])
+            return v, a
+
+        # Construct buckets based on clip_mode
+        buckets = defaultdict(list)
+        for idx, sample in enumerate(batch):
+            buckets[bucket_key(sample["metadata"], idx)].append(sample)
+
+        # Decide how many clips to keep per bucket (K)
+        if self.clip_to == "min":
+            K = min(len(v) for v in buckets.values())
+        elif isinstance(self.clip_to, int):
+            K = self.clip_to
+        else:
+            K = None   # keep all
+
+        # Sample from the buckets
+        if self.sample_mode == "single":
+            vids, auds, metas = [], [], []
+            for items in buckets.values():
+                # flatten windows inside every sample first
+                windows = [
+                    (vw, aw, meta)
+                    for s in limit_bucket(items, K)
+                    for vw, aw, meta in zip(s["video"], s["audio"], [s["metadata"]]*len(s["video"]))
+                ]
+                
+                # Select windows from buckets
+                if self.clip_selector == "random" and K and len(windows) > K:
+                    idx = rng.choice(len(windows), K, replace=False)
+                    idx.sort()
+                    windows = [windows[i] for i in idx]
+                else:
+                    windows = windows[:K] if K else windows
+                    
+                # Stack windows
+                if windows:
+                    vids.append(torch.stack([w[0] for w in windows]))
+                    auds.append(torch.stack([w[1] for w in windows]))
+                    metas.extend(w[2] for w in windows)
+
+            if not vids:  # all buckets empty -> skip this batch
+                return None
+
+            video = torch.cat(vids, 0)
+            audio = torch.cat(auds, 0)
+
+        elif self.sample_mode == "sequence":
+            
+            # Select clips from buckets
+            chosen = [s for b in buckets.values() for s in limit_bucket(b, K)]
+            if not chosen:
+                return None
+            
+            # Collect video/audio/metadata
+            vids, auds, metas, lens = [], [], [], []
+            for s in chosen:
+                vids.append(s["video"])
+                auds.append(s["audio"])
+                metas.append(s["metadata"])
+                lens.append(s["video"].shape[0]) # number of windows
+                
+            # Determine target temporal length
+            if self.seq_len == "min":
+                L = min(lens)
+            elif isinstance(self.seq_len, int):
+                L = self.seq_len
+            else:  # seq_len is None → pad to longest
+                L = max(lens)
+                
+            # Pad or trim sequences
+            vids, auds = zip(*(pad_or_trim(v, a, L) for v, a in zip(vids, auds)))
+            video = torch.stack(list(vids))
+            audio = torch.stack(list(auds))
+        else:
+            raise ValueError(f"Invalid sample mode: {self.sample_mode}")
+
+        # Organize metadata into dict of lists
+        meta_dict = {k: [m[k] for m in metas] for k in metas[0]}
+        
+        if self.sample_mode == "sequence":
+            meta_dict["length"] = torch.as_tensor(lens, dtype=torch.long)
+
+        # Optional label-encoding of identities
+        if self.encode_ids:
+            all_ids = meta_dict["id_source"] + meta_dict["id_target"]
+            self.id_encoder.fit(all_ids)
+            meta_dict["id_source"] = self.id_encoder.transform(meta_dict["id_source"])
+            meta_dict["id_target"] = self.id_encoder.transform(meta_dict["id_target"])
+
+        # Tensorise simple numeric metadata
+        for k, v in meta_dict.items():
+            if isinstance(v[0], (int, np.integer, numbers.Integral)):
+                meta_dict[k] = torch.as_tensor(v, dtype=torch.long)
+            elif isinstance(v[0], (float, np.floating, numbers.Real)):
+                meta_dict[k] = torch.as_tensor(v, dtype=torch.float)
+
+        return {"video": video, "audio": audio, "metadata": meta_dict}
+
+    def train_dataloader(self):
+        if self.balance_classes:
+            sampler = WeightedRandomSampler(
+                weights=self.train_dataset.sample_weights,
+                num_samples=len(self.train_dataset.sample_weights),
+                replacement=True,
+            )
+        else:
+            sampler = None
+        
+        return DataLoader(self.train_dataset, batch_size=self.batch_size,
+                          shuffle=True if not sampler else False, num_workers=self.num_workers,
+                          sampler=sampler,
+                          collate_fn=self._collate_fn, persistent_workers=self.num_workers > 0, drop_last=True)
+
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset, batch_size=self.batch_size,
+                          num_workers=self.num_workers, collate_fn=self._collate_fn,
+                          persistent_workers=self.num_workers > 0)
+
+    def test_dataloader(self):
+        return DataLoader(self.test_dataset, batch_size=self.batch_size,
+                          num_workers=self.num_workers, collate_fn=self._collate_fn,
+                          persistent_workers=self.num_workers > 0)
+
 
 
 # =============================================================================
@@ -539,9 +1173,13 @@ DATASET_MAP = {
         "original": DeepSpeak_v1_1_Dataset,
         "preprocessed": DeepSpeak_v1_1_Dataset_prep,
     },
+    "SWAN_DF": {
+        "original": SWAN_DF_Dataset,
+        "preprocessed": None,
+    },
 }
 
-DatasetType = Literal["LAV-DF", "DeepSpeak_v1_1"]
+DatasetType = Literal["DeepSpeak_v1_1", "SWAN_DF"]
 
 
 def get_dataset(dataset_type: DatasetType, **kwargs) -> Dataset:
@@ -561,8 +1199,12 @@ def get_dataset(dataset_type: DatasetType, **kwargs) -> Dataset:
 
 DATAMODULE_MAP = {
     "DeepSpeak_v1_1": {
-        "original": DeepSpeak_v1_1_DataModule,
+        "original": AVDataModule,
         "preprocessed": DeepSpeak_v1_1_DataModule_prep,
+    },
+    "SWAN_DF": {
+        "original": AVDataModule,
+        "preprocessed": None,
     },
 }
 
