@@ -116,7 +116,7 @@ def setup(args: argparse.Namespace):
             torch.nn.Linear(EMB_DIM, 1), torch.nn.Sigmoid()
         )
     elif TASK == "fine-grained":
-        assert DATASET != "SWAN_DF", "Fine-grained task is not supported for SWAN_DF, as it has only RA-RV and FA-FV classes."
+        assert TRAIN_DATASET != "SWAN_DF", "Fine-grained task is not supported for SWAN_DF, as it has only RA-RV and FA-FV classes."
         detection_head = torch.nn.Sequential(
             torch.nn.Linear(EMB_DIM, 4), torch.nn.Softmax(dim=1)
         )
