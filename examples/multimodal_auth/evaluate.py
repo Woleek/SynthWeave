@@ -31,6 +31,8 @@ def parse_args():
 
     parser = argparse.ArgumentParser()
     
+    parser.add_argument("--dataset", choices=["DeepSpeak_v1_1", "SWAN_DF"],
+                   required=True, help="Which dataset to load")
     parser.add_argument(
         "--data_dir",
         type=str,
@@ -60,9 +62,12 @@ def setup(args: argparse.Namespace):
         "preprocessed": True,
         "sample_mode": "sequence",
     }
+    
+    if args.dataset == "SWAN_DF":
+        ds_kwargs["av_codes"] = ["00", "11"]
 
     dm = get_datamodule(
-        "DeepSpeak_v1_1",
+        args.dataset,
         batch_size=1, # NOTE: currently single window fusions don't ignore padding
         dataset_kwargs=ds_kwargs,
         sample_mode="sequence",
@@ -74,8 +79,9 @@ def setup(args: argparse.Namespace):
 
     FUSION = args.fusion
     TASK = args.task
+    DATASET = args.dataset
 
-    path = Path("logs") / TASK / FUSION
+    path = Path("logs") / DATASET / TASK / FUSION
     path = sorted(path.glob("version_*"))[-1]
     
     print(f"Loading model: '{FUSION}' for task '{TASK}' from {path}")
@@ -98,6 +104,7 @@ def setup(args: argparse.Namespace):
         modality_keys=["video", "audio"],
         out_proj_dim=model_args.proj_dim,
         num_att_heads=4,  # only for attention-based fusions
+        n_layers=3,  # only for MMD
         dropout=model_args.dropout,
     )
 
@@ -106,6 +113,7 @@ def setup(args: argparse.Namespace):
             torch.nn.Linear(EMB_DIM, 1), torch.nn.Sigmoid()
         )
     elif TASK == "fine-grained":
+        assert DATASET != "SWAN_DF", "Fine-grained task is not supported for SWAN_DF, as it has only RA-RV and FA-FV classes."
         detection_head = torch.nn.Sequential(
             torch.nn.Linear(EMB_DIM, 4), torch.nn.Softmax(dim=1)
         )
