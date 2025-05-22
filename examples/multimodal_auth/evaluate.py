@@ -1,7 +1,7 @@
 import argparse
 from typing import Dict
 import torch
-from src.pipe import MultiModalAuthPipeline, ImagePreprocessor, AudioPreprocessor, AdaFace, ReDimNet
+from src.pipe import MultiModalAuthPipeline #, ImagePreprocessor, AudioPreprocessor, AdaFace, ReDimNet
 from synthweave.utils.datasets import get_datamodule
 from synthweave.utils.fusion import get_fusion
 from pathlib import Path
@@ -15,8 +15,6 @@ from torchmetrics.classification import (
     AveragePrecision, 
     AUROC
 )
-from pytorch_lightning.trainer import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
 
 class dotdict(dict):
     def __getattr__(self, name):
@@ -52,6 +50,11 @@ def parse_args():
         choices=["binary", "fine-grained"],
         help="Task type.",
     )
+    parser.add_argument(
+        "--trained_on",
+        choices=["DeepSpeak_v1_1", "SWAN_DF"],
+                   required=True, help="Which dataset the model was trained on"
+    )
 
     return parser.parse_args()
 
@@ -79,9 +82,9 @@ def setup(args: argparse.Namespace):
 
     FUSION = args.fusion
     TASK = args.task
-    DATASET = args.dataset
+    TRAIN_DATASET = args.trained_on
 
-    path = Path("logs") / DATASET / TASK / FUSION
+    path = Path("logs") / TRAIN_DATASET / TASK / FUSION
     path = sorted(path.glob("version_*"))[-1]
     
     print(f"Loading model: '{FUSION}' for task '{TASK}' from {path}")
@@ -202,6 +205,9 @@ def save_metrics(metrics, path):
             v = v.compute()
             v = v.item()
             metrics[split][k] = v
+            
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(path, "w") as f:
         json.dump(metrics, f, indent=4)
@@ -242,4 +248,4 @@ if __name__ == "__main__":
     
     evaluate(dm, pipe, metrics)
     
-    save_metrics(metrics, path / "results.json")
+    save_metrics(metrics, path / "results" / f"{args.dataset}.json")
