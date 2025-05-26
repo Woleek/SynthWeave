@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 import json
 import numbers
 import os
@@ -1210,15 +1210,14 @@ class PreparedAVH5Dataset(Dataset):
                 meta = json.loads(
                     self.h5_file[ent["sample_id"]].attrs["metadata"]
                 )
-                labels.append(meta["label"])
+                labels.append(meta["av"])
         else:               # sequence mode – one label per clip
             for vid in self.video_ids:
                 meta = json.loads(self.h5_file[vid].attrs["metadata"])
-                labels.append(meta["label"])
+                labels.append(meta["av"])
                 
         # label counts and inverse-frequency weights
-        counts = {"0": 0, "1": 0}
-        for lbl in labels: counts[str(lbl)] += 1
+        counts = Counter(labels)
         inv_freq = {k: 1.0 / v for k, v in counts.items()}
         self.sample_weights = [inv_freq[str(lbl)] for lbl in labels]
 
