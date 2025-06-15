@@ -10,10 +10,11 @@ from facenet_pytorch import MTCNN
 import numpy as np
 import cv2
 from PIL import Image
-
+import sys
+sys.path.append('../../..')
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
-
+from collections import namedtuple
 # ====================================
 #             VISUAL BRANCH
 # ====================================
@@ -23,6 +24,8 @@ class Flatten(nn.Module):
 
 
 class BasicBlockIR(nn.Module):
+    """ BasicBlock for IRNet
+    """
     def __init__(self, in_channel, depth, stride):
         super(BasicBlockIR, self).__init__()
         if in_channel == depth:
@@ -30,20 +33,19 @@ class BasicBlockIR(nn.Module):
         else:
             self.shortcut_layer = nn.Sequential(
                 nn.Conv2d(in_channel, depth, (1, 1), stride, bias=False),
-                nn.BatchNorm2d(depth),
-            )
+                nn.BatchNorm2d(depth))
         self.res_layer = nn.Sequential(
             nn.BatchNorm2d(in_channel),
             nn.Conv2d(in_channel, depth, (3, 3), (1, 1), 1, bias=False),
             nn.BatchNorm2d(depth),
             nn.PReLU(depth),
             nn.Conv2d(depth, depth, (3, 3), stride, 1, bias=False),
-            nn.BatchNorm2d(depth),
-        )
+            nn.BatchNorm2d(depth))
 
     def forward(self, x):
         shortcut = self.shortcut_layer(x)
         res = self.res_layer(x)
+
         return res + shortcut
 
 
@@ -53,20 +55,18 @@ def get_block(in_channel, depth, num_units, stride=2):
     ]
 
 
-class Bottleneck:
-    def __init__(self, in_channel, depth, stride):
-        self.in_channel = in_channel
-        self.depth = depth
-        self.stride = stride
+class Bottleneck(namedtuple('Block', ['in_channel', 'depth', 'stride'])):
+    '''A named tuple describing a ResNet block.'''
 
 
-def get_blocks(num_layers=50):
+def get_blocks(num_layers=100):
     return [
-        get_block(64, 64, 3),
-        get_block(64, 128, 4),
-        get_block(128, 256, 14),
-        get_block(256, 512, 3),
+        get_block(in_channel=64, depth=64, num_units=3),
+        get_block(in_channel=64, depth=128, num_units=13),
+        get_block(in_channel=128, depth=256, num_units=30),
+        get_block(in_channel=256, depth=512, num_units=3)
     ]
+
 
 
 def initialize_weights(modules):
@@ -83,42 +83,54 @@ def initialize_weights(modules):
 
 
 class Backbone(nn.Module):
-    def __init__(self, input_size=(112, 112), num_layers=50, mode="ir"):
+    def __init__(self, input_size, num_layers, mode='ir'):
+        """ Args:
+            input_size: input_size of backbone
+            num_layers: num_layers of backbone
+            mode: support ir or irse
+        """
         super(Backbone, self).__init__()
-        self.input_layer = nn.Sequential(
-            nn.Conv2d(3, 64, (3, 3), 1, 1, bias=False), nn.BatchNorm2d(64), nn.PReLU(64)
-        )
-
+        assert input_size[0] in [112, 224], \
+            "input_size should be [112, 112] or [224, 224]"
+        assert num_layers in [18, 34, 50, 100, 152, 200], \
+            "num_layers should be 18, 34, 50, 100 or 152"
+        assert mode in ['ir', 'ir_se'], \
+            "mode should be ir or ir_se"
+        self.input_layer = nn.Sequential(nn.Conv2d(3, 64, (3, 3), 1, 1, bias=False),
+                                      nn.BatchNorm2d(64), nn.PReLU(64))
         blocks = get_blocks(num_layers)
-        modules = [
-            BasicBlockIR(b.in_channel, b.depth, b.stride)
-            for block in blocks
-            for b in block
-        ]
-        self.body = nn.Sequential(*modules)
+        unit_module = BasicBlockIR
+        output_channel = 512
 
-        self.output_layer = nn.Sequential(
-            nn.BatchNorm2d(512),
-            nn.Dropout(0.4),
-            Flatten(),
-            nn.Linear(512 * 7 * 7, 512),
-            nn.BatchNorm1d(512, affine=False),
-        )
+        self.output_layer = nn.Sequential(nn.BatchNorm2d(output_channel),
+                                    nn.Dropout(0.4), Flatten(),
+                                    nn.Linear(output_channel * 7 * 7, 512),
+                                    nn.BatchNorm1d(512, affine=False))
+        modules = []
+        for block in blocks:
+            for bottleneck in block:
+                modules.append(
+                    unit_module(bottleneck.in_channel, bottleneck.depth,
+                                bottleneck.stride))
+        self.body = nn.Sequential(*modules)
 
         initialize_weights(self.modules())
 
     def forward(self, x):
+        
+        # current code only supports one extra image
+        # it comes with a extra dimension for number of extra image. We will just squeeze it out for now
         x = self.input_layer(x)
-        for module in self.body:
+
+        for idx, module in enumerate(self.body):
             x = module(x)
+
         x = self.output_layer(x)
         norm = torch.norm(x, 2, 1, True)
         output = torch.div(x, norm)
+
         return output, norm
-
-
-def IR_50(input_size=(112, 112)):
-    return Backbone(input_size, 50, "ir")
+    
 
 def IR_101(input_size=(112, 112)):
     return Backbone(input_size, 100, "ir")
@@ -294,7 +306,7 @@ class ImagePreprocessor:
         if self.estimate_quality:
             self.quality_estimator = QualityAdaFace(
                 path=os.path.join(models_dir), freeze=True
-            )
+            ).to(device)
 
         # self.transform = transforms.Compose([transforms.Lambda(lambda x: x.float())])
         self.transform = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
@@ -317,7 +329,7 @@ class ImagePreprocessor:
 
     def _check_frontal_face(self, image):
         yaw, pitch, roll = self.head_pose_estimator(image)
-        return abs(yaw) < 30 and abs(pitch) < 30 and abs(roll) < 30
+        return abs(yaw) < 20 and abs(pitch) < 20 and abs(roll) < 20
 
     def _select_frontal_frame(self, frames: list):
         # Returns the first frame with a frontal face
@@ -328,6 +340,9 @@ class ImagePreprocessor:
         return frontal_frames if frontal_frames else None
 
     def _estimate_quality(self, frames: torch.Tensor) -> Tuple[torch.Tensor, float]:
+        if len(frames) > 10:
+            step = len(frames) // 10
+            frames = frames[::step]
         qualities = self.quality_estimator(frames.to(self.device))
         best_quality = torch.argmax(qualities).item()
         return frames[best_quality], qualities[best_quality]
@@ -378,7 +393,7 @@ class ImagePreprocessor:
             if self.crop_face:
                 cropped_faces = self._crop_faces(frames)
 
-                if cropped_faces:
+                if cropped_faces is not None:
                     frames = cropped_faces
                 else:
                     frame = torch.zeros(
