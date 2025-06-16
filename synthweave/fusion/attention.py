@@ -4,7 +4,6 @@ import torch.nn as nn
 from typing import Dict, List, Optional
 
 from .base import BaseFusion
-from ..utils.modules import LazyLinearXavier, LinearXavier
 
 """
 Attention-based fusion modules for multimodal feature fusion.
@@ -78,21 +77,25 @@ class AFF(BaseFusion):
             "AFF needs equal-sized modality embeddings. "
             "Either pass unify_embeds=True or supply out_proj_dim."
         )
+        
+        # Modality-specific FC layers
+        self.proj = nn.ModuleDict({
+            k: nn.Sequential(
+                nn.Linear(attn_dim, self.output_dim, bias=bias),
+                nn.ReLU(),
+                nn.Dropout(dropout_p)
+            )
+            for k in self.modalities
+        })
 
-        # Attention layer for computing weights
-        self.attention_layer = nn.MultiheadAttention(
-            embed_dim=attn_dim,
-            num_heads=num_att_heads,
-            dropout=dropout_p,
-            batch_first=True,
+        # Attention layer: simple MLP to produce attention scores
+        self.attention_layer = nn.Sequential(
+            nn.Linear(attn_dim * len(self.modalities), self.output_dim),
+            nn.ReLU(),
+            nn.Linear(self.output_dim, len(self.modalities))
         )
-
-        # Project to desired output dimension if needed
-        self.post_proj = (
-            LinearXavier(attn_dim, output_dim, bias=False)
-            if attn_dim != output_dim
-            else nn.Identity()
-        )
+        
+        self.softmax = nn.Softmax(dim=1)
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
 
@@ -106,21 +109,22 @@ class AFF(BaseFusion):
         Returns:
             torch.Tensor: Fused representation with shape (batch_size, embed_dim)
         """
-        # Stack embeddings
-        mod_embeds = torch.stack(
-            [embeddings[k] for k in self.modalities], dim=1
-        )  # (B, M, PROJ)
-
-        # Apply attention (self-attention over modalities)
-        att_emb, att_weights = self.attention_layer(
-            mod_embeds, mod_embeds, mod_embeds
-        )  # (B, M, PROJ)
-
-        # Fuse all attended features by summing over modalities
-        fusion_vector = att_emb.sum(dim=1)  # (B, PROJ)
-
-        # Apply post-attention projection if needed
-        fusion_vector = self.post_proj(fusion_vector)  # (B, EMB)
+        # Project each modality
+        projected = [self.proj[k](embeddings[k]) for k in self.modalities]  # list of (B, PROJ)
+        
+        # Concatenate raw embeddings for attention
+        concat = torch.cat([embeddings[k] for k in self.modalities], dim=1)  # (B, PROJ * M)
+        att_logits = self.attention_layer(concat)  # (B, M)
+        att_weights = self.softmax(att_logits)  # (B, M)
+        
+        # Multiply attention weights by projected features
+        weighted = [
+            att_weights[:, i].unsqueeze(1) * projected[i]
+            for i in range(len(self.modalities))
+        ]
+        
+        # Sum for fusion
+        fusion_vector = sum(weighted)  # (B, PROJ)
 
         return fusion_vector
 
@@ -189,27 +193,27 @@ class IAFF(BaseFusion):
             "IAFF needs equal-size modality embeddings. "
             "Use unify_embeds=True or set out_proj_dim."
         )
-
-        # Multihead Attention for inter-attention between modalities
-        self.inter_attention_layer = nn.MultiheadAttention(
-            embed_dim=attn_dim,
-            num_heads=num_att_heads,
-            dropout=dropout_p,
-            batch_first=True,
+        
+        # FC for each modality
+        self.proj = nn.ModuleDict({
+            k: nn.Sequential(
+                nn.Linear(attn_dim, self.output_dim, bias=bias),
+                nn.ReLU(),
+                nn.Dropout(dropout_p),
+            )
+            for k in self.modalities
+        })
+        
+        # Attention layer: takes concatenated raw embeddings, outputs 2 attention scores (one for each modality)
+        self.attention_layer = nn.Sequential(
+            nn.Linear(attn_dim * len(self.modalities), self.output_dim),
+            nn.ReLU(),
+            nn.Linear(self.output_dim, len(self.modalities))
         )
 
-        # Softmax layer
-        self.softmax = nn.Softmax(dim=-1)
-
-        # Dropout layer
+        # Dropout & softmax
         self.dropout = nn.Dropout(dropout_p)
-
-        # Project to desired output dimension if needed
-        self.post_proj = (
-            LinearXavier(attn_dim, output_dim, bias=False)
-            if attn_dim != output_dim
-            else nn.Identity()
-        )
+        self.softmax = nn.Softmax(dim=1)  # softmax over modalities
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
 
@@ -223,34 +227,32 @@ class IAFF(BaseFusion):
         Returns:
             torch.Tensor: Fused representation with shape (batch_size, embed_dim)
         """
-        # Stack modality embeddings for inter-attention
-        mod_embeds = torch.stack(
-            [embeddings[k] for k in self.modalities], dim=1
-        )  # (B, M, PROJ)
+        # Project each modality
+        projected = [self.proj[k](embeddings[k]) for k in self.modalities]  # [(B, H), ...]
 
-        # Inter-attention mechanism (Self-Attention across modalities)
-        att_emb, attn_weights = self.inter_attention_layer(
-            mod_embeds, mod_embeds, mod_embeds
-        )  # (B, M, PROJ)
+        # Get attention scores for both modalities from concat(raw)
+        concat = torch.cat([embeddings[k] for k in self.modalities], dim=1)  # (B, D1 + D2)
+        attn_logits = self.attention_layer(concat)  # (B, 2)
+        attn_scores = [self.softmax(attn_logits)[:, i].unsqueeze(1) for i in range(len(self.modalities))]  # (B, 1), (B, 1)
 
-        # Scalar gates (softmax over feature dimension)
-        sim = (mod_embeds * att_emb).sum(dim=-1)  # (B, M)
-        gates = self.softmax(sim / math.sqrt(self.proj_dim))  # (B, M)
-        gates = gates.unsqueeze(-1)  # (B, M, 1)
+        # For each modality, compute cross-attended projections with both attention scores
+        attended = []
+        for i in range(len(self.modalities)):
+            # Own and cross attention: [a_a, a_v] for both modalities
+            weighted_own = self.dropout(attn_scores[i] * projected[i])
+            weighted_cross = self.dropout(attn_scores[1-i] * projected[i])
+            # Softmax
+            weighted_own = self.softmax(weighted_own)
+            weighted_cross = self.softmax(weighted_cross)
+            # Dropout again
+            weighted_own = self.dropout(weighted_own)
+            weighted_cross = self.dropout(weighted_cross)
+            attended.append(weighted_own + weighted_cross)
 
-        # Enhance embeddings with residuals and gates
-        enhanced_embeds = mod_embeds + gates * att_emb  # (B, M, PROJ)
-
-        # Apply dropout
-        enhanced_embeds = self.dropout(enhanced_embeds)  # (B, M, PROJ)
-
-        # Sum and apply dropout again
-        fusion_vector = self.dropout(enhanced_embeds.sum(dim=1))  # (B, PROJ)
-
-        # Project to output dimension if needed
-        fusion_vector = self.post_proj(fusion_vector)  # (B, EMB)
-
-        return fusion_vector
+        # Sum attended features, final dropout
+        fusion = sum(attended)
+        
+        return fusion
 
 
 class CAFF(BaseFusion):
@@ -318,28 +320,23 @@ class CAFF(BaseFusion):
             "Use unify_embeds=True or set out_proj_dim."
         )
 
-        # Multihead Attention Layers (one for each modality pair)
-        self.cross_attention_layers = nn.ModuleDict(
-            [
-                (
-                    f"{key1}_{key2}",
-                    nn.MultiheadAttention(
-                        embed_dim=attn_dim,
-                        num_heads=num_att_heads,
-                        dropout=dropout,
-                        batch_first=True,
-                    ),
-                )
-                for i, key1 in enumerate(modality_keys)
-                for j, key2 in enumerate(modality_keys)
-                if i != j
-            ]
-        )
+        # Learnable weight matrices for each modality pair (i ≠ j)
+        self.cross_weights = nn.ParameterDict()
+        for mi in self.modalities:
+            for mj in self.modalities:
+                if mi != mj:
+                    self.cross_weights[f"{mi}_{mj}"] = nn.Parameter(
+                        torch.randn(self.proj_dim, self.proj_dim)
+                    )
 
-        # Aggregation layer
-        self.aggregation_layer = LinearXavier(
-            self.proj_dim * len(modality_keys), output_dim, bias
-        )
+        # Output FC layer after flatten+concat
+        self.fc = nn.Linear(self.proj_dim * len(self.modalities), self.output_dim, bias=bias)
+        
+        # Sotfmax for attention weights
+        self.softmax = nn.Softmax(dim=1)
+        
+        # Dropout layer
+        self.dropout = nn.Dropout(dropout)
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
 
@@ -353,27 +350,49 @@ class CAFF(BaseFusion):
         Returns:
             torch.Tensor: Fused representation with shape (batch_size, embed_dim)
         """
-        # Compute cross-attention for each modality pair
-        sum_att = {k: torch.zeros_like(v) for k, v in embeddings.items()}
-        for i, m1 in enumerate(self.modalities):
-            for j, m2 in enumerate(self.modalities):
-                if i == j:
+        # embeddings: dict {modality: (B, D) or (B, K, D)}
+        processed = {}
+
+        # Convert all embeddings to (B, K, D), where K=1 if not present
+        reshaped = {}
+        for k, v in embeddings.items():
+            if v.dim() == 2:
+                v = v.unsqueeze(1)  # (B, 1, D)
+            reshaped[k] = v
+
+        for mi in self.modalities:
+            # Gather all cross-attended features from other modalities
+            attended = []
+            xi = reshaped[mi]  # (B, K, Di)
+            for mj in self.modalities:
+                if mi == mj:
                     continue
-                att, _ = self.cross_attention_layers[f"{m1}_{m2}"](
-                    embeddings[m1].unsqueeze(1),  # query  (B,1,PROJ)
-                    embeddings[m2].unsqueeze(1),  # key    (B,1,PROJ)
-                    embeddings[m2].unsqueeze(1),  # value  (B,1,PROJ)
-                )  # att → (B,1,PROJ)
-                sum_att[m1] += att.squeeze(1)  # accumulate (B,PROJ)
+                xj = reshaped[mj]  # (B, K, Dj)
+                W = self.cross_weights[f"{mi}_{mj}"]  # (Di, Dj)
+                # Cross-correlation
+                xiW = torch.matmul(xi, W)  # (B, K, Dj)
+                # Cross-corr matrix: (B, K, K)
+                C = torch.matmul(xiW, xj.transpose(1, 2))
+                # Attention: softmax over last dim
+                attn = self.softmax(C)  # (B, K, K)
+                # Attend to xj: (B, K, K) x (B, K, Dj) --> (B, K, Dj)
+                xj_att = torch.matmul(attn, xj)  # (B, K, Dj)
+                # If xi and xj have different dims, project xj_att to xi dim for skip connection
+                if xj_att.shape[-1] != xi.shape[-1]:
+                    # Project xj_att to Di
+                    xj_att = nn.Linear(xj_att.shape[-1], xi.shape[-1]).to(xj_att.device)(xj_att)
+                # Skip connection + tanh
+                attended.append(torch.tanh(xi + xj_att))
+            # Aggregate attended versions (e.g., average)
+            fused = torch.stack(attended, dim=0).mean(dim=0)  # (B, K, Di)
+            processed[mi] = fused
 
-        # Combine attended features with original embeddings via skip connection and nonlinearity via tanh
-        refined_embeds = [
-            torch.tanh(embeddings[m] + sum_att[m]) for m in self.modalities
-        ]  # [(B, PROJ)]
-
-        # Apply aggregation layer
-        fusion_vector = self.aggregation_layer(
-            torch.cat(refined_embeds, dim=-1)
-        )  # (B, EMB)
-
-        return fusion_vector
+        # Flatten and concatenate all modalities
+        outs = []
+        for k in self.modalities:
+            out = processed[k].flatten(1)  # (B, K*D)
+            outs.append(out)
+        fusion = torch.cat(outs, dim=1)  # (B, sum(K*D))
+        fusion = self.dropout(fusion)
+        fusion = self.fc(fusion)
+        return fusion

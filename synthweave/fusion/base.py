@@ -84,12 +84,17 @@ class BaseFusion(nn.Module):
                     dim is not None for dim in input_dims.values()
                 ), "Either specify output dimension or input dimensions for all modalities."
                 out_proj_dim = min(dim for dim in input_dims.values())
-
-            # Set projection dim
-            hidden_proj_dim = (
-                hidden_proj_dim or out_proj_dim
-            )  # Determine hidden dimension
             self.proj_dim = out_proj_dim
+            
+            # Set projection dim
+            if hidden_proj_dim is not None:
+                hidden_proj_dim = [hidden_proj_dim for _ in modality_keys]
+            elif self.input_dims and all(
+                    dim is not None for dim in input_dims.values()
+                ):
+                hidden_proj_dim = [dim // 2 for dim in input_dims.values()]
+            else:
+                hidden_proj_dim = [out_proj_dim // 2 for _ in modality_keys]
 
             self.projection = nn.ModuleDict(
                 {
@@ -102,34 +107,26 @@ class BaseFusion(nn.Module):
                                         (
                                             ProjectionMLP(
                                                 input_dim,
-                                                hidden_proj_dim,
+                                                input_dim,
                                                 out_proj_dim,
-                                                bias=False,
+                                                bias=True,
                                                 dropout=dropout_p,
                                             )
                                             if input_dim is not None
                                             else LazyProjectionMLP(
-                                                hidden_proj_dim,
+                                                input_dim,
                                                 out_proj_dim,
-                                                bias=False,
+                                                bias=True,
                                                 dropout=dropout_p,
                                             )
                                         ),
                                     )
                                 ),
-                                ("layernorm", nn.LayerNorm(out_proj_dim)),
-                                (
-                                    "l2norm",
-                                    (
-                                        L2NormalizationLayer(dim=-1)
-                                        if normalize
-                                        else nn.Identity()
-                                    ),
-                                ),
+                                # ("layernorm", nn.LayerNorm(out_proj_dim)),
                             ]
                         )
                     )
-                    for mod, input_dim in self.input_dims.items()
+                    for idx, (mod, input_dim) in enumerate(self.input_dims.items())
                 }
             )
         else:
@@ -138,21 +135,6 @@ class BaseFusion(nn.Module):
             self.projection = nn.ModuleDict(
                 {mod: nn.Identity() for mod in modality_keys}
             )
-
-        # Post fusion operations
-        self.refiner = nn.Sequential(
-            OrderedDict(
-                [
-                    ("layernorm", nn.LayerNorm(self.output_dim)),
-                    ("gelu", nn.GELU()),
-                    ("dropout", nn.Dropout(dropout_p)),
-                    # (
-                    #     "l2norm",
-                    #     (L2NormalizationLayer(dim=-1) if normalize else nn.Identity()),
-                    # ),
-                ]
-            )
-        )
 
     def __call__(
         self, embeddings: Dict[str, torch.Tensor], output_projections: bool = False
@@ -211,9 +193,6 @@ class BaseFusion(nn.Module):
 
         # Perform fusion
         fused_embedding = self._forward(proj_embeddings)
-
-        # Refine the fused embedding
-        fused_embedding = self.refiner(fused_embedding)
 
         # Output
         out = {

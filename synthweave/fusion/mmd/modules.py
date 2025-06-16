@@ -35,9 +35,10 @@ class SelfAttention(nn.Module):
             modal_dim: Dimension of the input features
         """
         super(SelfAttention, self).__init__()
-        self.mha = nn.MultiheadAttention(modal_dim, n_heads,
-                                           dropout=dropout_p, batch_first=True)
-        
+        self.mha = nn.MultiheadAttention(
+            modal_dim, n_heads, dropout=dropout_p, batch_first=True
+        )
+
         self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, Z):
@@ -57,7 +58,7 @@ class SelfAttention(nn.Module):
         """
         Z_hat, _ = self.mha(Z, Z, Z)
         Z_hat = self.dropout(Z_hat)
-        
+
         return Z_hat
 
 
@@ -85,7 +86,7 @@ class FeedForward(nn.Module):
         self.linear2 = LinearXavier(d_ff, modal_dim)
 
         self.relu = nn.ReLU()
-        
+
         self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, x):
@@ -121,10 +122,11 @@ class BiCroAttention(nn.Module):
             modal_dim: Dimension of the input features
         """
         super(BiCroAttention, self).__init__()
-        self.mha = nn.MultiheadAttention(modal_dim, n_heads,
-                                           dropout=dropout_p, batch_first=True)
-        self.out   = nn.Linear(modal_dim, modal_dim, bias=True)
-        self.drop  = nn.Dropout(dropout_p)
+        self.mha = nn.MultiheadAttention(
+            modal_dim, n_heads, dropout=dropout_p, batch_first=True
+        )
+        self.out = nn.Linear(modal_dim, modal_dim, bias=True)
+        self.drop = nn.Dropout(dropout_p)
 
     def forward(self, P: list[torch.Tensor]) -> torch.Tensor:
         """Compute bi-directional cross-attention for the i-th modality.
@@ -149,13 +151,13 @@ class BiCroAttention(nn.Module):
         for i, Pi in enumerate(P):
             cross_sum = 0.0
             for j, Pj in enumerate(P):
-                if i == j: # skip self
+                if i == j:  # skip self
                     continue
                 # Q comes from j, K/V from i
                 att, _ = self.mha(query=Pj, key=Pi, value=Pi)
                 cross_sum = cross_sum + att
-            cross_avg = cross_sum / (len(P) - 1) # mean over others
-            outs.append(self.drop(self.out(cross_avg))) # (B, T, EMB)
+            cross_avg = cross_sum / (len(P) - 1)  # mean over others
+            outs.append(self.drop(self.out(cross_avg)))  # (B, T, EMB)
         return outs
 
 
@@ -182,13 +184,13 @@ class MMDBlock(nn.Module):
 
         self.bi_cro_att = BiCroAttention(modality_dim, num_att_heads, dropout_p)
         self.ln1 = nn.LayerNorm(modality_dim)
-        
+
         self.self_att = SelfAttention(modality_dim, num_att_heads, dropout_p)
         self.ln2 = nn.LayerNorm(modality_dim)
-        
-        self.ff = FeedForward(modality_dim, 4*modality_dim, dropout_p)
+
+        self.ff = FeedForward(modality_dim, 4 * modality_dim, dropout_p)
         self.ln3 = nn.LayerNorm(modality_dim)
-        
+
         self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, tensors: list[torch.Tensor]) -> list[torch.Tensor]:
@@ -206,15 +208,15 @@ class MMDBlock(nn.Module):
             3. Apply FeedForward with residual connection and layer norm
         """
         # 1) cross-modal
-        cross_outs = self.bi_cro_att(tensors) # list[(B,T,d)]
+        cross_outs = self.bi_cro_att(tensors)  # list[(B,T,d)]
         x1 = [self.ln1(t + c) for t, c in zip(tensors, cross_outs)]
 
         # 2) self-att per modality
-        self_outs = [self.self_att(t) for t in x1] # list[(B,T,d)]
+        self_outs = [self.self_att(t) for t in x1]  # list[(B,T,d)]
         x2 = [self.ln2(t + self.dropout(sa)) for t, sa in zip(x1, self_outs)]
 
         # 3) feed-forward
         ff_outs = [self.ff(t) for t in x2]
         x3 = [self.ln3(t + self.dropout(ff)) for t, ff in zip(x2, ff_outs)]
 
-        return x3 # same list length
+        return x3  # same list length

@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from typing import Dict, List, Optional
 from .base import BaseFusion
-from ..utils.modules import LazyLinearXavier, LinearXavier
 
 """
 Gating-based fusion modules for multimodal feature fusion.
@@ -75,33 +74,27 @@ class GFF(BaseFusion):
         )
 
         self.output_dim = output_dim
-
-        # Gate projection to learn modality importance
-        if self.proj_dim is None:
-            self.gate_proj = LazyLinearXavier(self.proj_dim * len(modality_keys), bias)
-        else:
-            self.gate_proj = LinearXavier(
-                self.proj_dim * len(modality_keys),
-                self.proj_dim * len(modality_keys),
-                bias,
+        
+        # Per-modality FC+Dropout
+        self.mod_proj = nn.ModuleDict({
+            k: nn.Sequential(
+                nn.Linear(self.proj_dim, self.output_dim, bias=bias),
+                nn.Dropout(dropout)
             )
+            for k in self.modalities
+        })
 
-        # Dropout
-        self.dropout = nn.Dropout(dropout)
-
-        # Tanh
-        self.tanh = nn.Tanh()
-
-        # Sigmoid -> replaced with Softmax for arbitrary number of modalities
-        # self.sigmoid = nn.Sigmoid()
-        self.softmax = nn.Softmax(dim=-2)
-
-        # Apply post-gating projection if needed
-        self.post_proj = (
-            LinearXavier(self.proj_dim, output_dim, bias=False)
-            if self.proj_dim != output_dim
-            else nn.Identity()
+        # Gate MLP: maps concat(raw features) -> N modality gates
+        self.gate_proj = nn.Sequential(
+            nn.Linear(self.proj_dim * len(self.modalities), self.output_dim, bias=bias),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(self.output_dim, len(self.modalities), bias=bias)
         )
+
+        # Tanh activation and softmax for gating
+        self.tanh = nn.Tanh()
+        self.softmax = nn.Softmax(dim=1)  # over modalities
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
 
@@ -122,25 +115,15 @@ class GFF(BaseFusion):
             4. Applies gates to modality features
             5. Sums the gated features to produce final fusion
         """
-        # Concatenate the embeddings
-        concat_embeds = torch.cat(
-            [embeddings[k] for k in self.modalities], dim=-1
-        )  # (B, M * PROJ)
+        # Project & activate each modality feature
+        mod_feats = [self.tanh(self.mod_proj[k](embeddings[k])) for k in self.modalities]  # list of (B, H)
+        mod_feats = torch.stack(mod_feats, dim=1)  # (B, N, H)
 
-        # Compute gate tensor
-        gate_logits = self.dropout(self.gate_proj(concat_embeds))  # (B, M * PROJ)
-        gate = gate_logits.view(-1, len(self.modalities), self.proj_dim)  # (B, M, PROJ)
-        gate = self.softmax(gate)  # sum to 1 over modalities
+        # Compute gates from concatenated raw embeddings
+        concat = torch.cat([embeddings[k] for k in self.modalities], dim=1)  # (B, sum(Di))
+        gate_logits = self.gate_proj(concat)  # (B, N)
+        gates = self.softmax(gate_logits).unsqueeze(-1)  # (B, N, 1)
 
-        # Apply tanh activation to each modality
-        tanh_embeds = torch.stack(
-            [self.tanh(embeddings[k]) for k in self.modalities], dim=1
-        )  # (B, M, PROJ)
-
-        # Apply gating mechanism for fusion
-        fusion_vector = (gate * tanh_embeds).sum(dim=1)  # (B, PROJ)
-
-        # Apply final projection if needed
-        fusion_vector = self.post_proj(fusion_vector)  # (B, EMB)
-
-        return fusion_vector
+        # Weighted sum of modality features
+        fused = (gates * mod_feats).sum(dim=1)  # (B, H)
+        return fused

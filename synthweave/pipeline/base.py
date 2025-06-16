@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from ..fusion.base import BaseFusion
 from typing import Any, Dict, Optional, Callable, Tuple, Union, Mapping, List
@@ -166,7 +167,7 @@ class BasePipeline(nn.Module):
 
         # Fuse embeddings into one vector
         output: dict = self.fusion(
-            {modality: feats[modality] for modality in self.fusion.modalities},
+            {modality: F.normalize(feats[modality], p=2, dim=1) for modality in self.fusion.modalities},
             output_projections=output_projections,
         )
 
