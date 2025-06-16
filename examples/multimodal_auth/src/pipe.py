@@ -1,5 +1,7 @@
+from abc import ABC, abstractmethod
 import copy
 import warnings
+import librosa
 import torch.nn.functional as F
 import torch
 import torch.nn as nn
@@ -415,7 +417,64 @@ class ImagePreprocessor:
         # tensor output and validity mask
         return torch.stack(frames, dim=0), torch.tensor(valid_mask, dtype=torch.bool)
 
+class AudioMetric(ABC):
+    @abstractmethod
+    def __call__(self, audio_input: torch.Tensor) -> torch.Tensor:
+        pass
 
+    @abstractmethod
+    def normalize_metric(self, metric: torch.Tensor) -> torch.Tensor:
+        pass
+
+
+class SNREstimator(AudioMetric):
+    def __init__(
+        self,
+        frame_length=1024,  # Number of samples per frame for audio analysis
+        hop_length=512,  # Number of samples between frames
+        noise_percentile=10,  # Percentile threshold for noise estimation
+        max_snr=30,  # Maximum SNR value when noise power is very low or zero
+    ):
+        self.frame_length = frame_length
+        self.hop_length = hop_length
+        self.noise_percentile = noise_percentile
+        self.max_snr = max_snr
+
+    def normalize_metric(self, metric: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize SNR values to be between 0 and 1
+        """
+        return torch.clamp(1 - (metric / self.max_snr), 0, 1)
+
+    def __call__(self, audio_input: torch.Tensor) -> torch.Tensor:
+        N, C, T = audio_input.shape
+        results = []
+
+        for n in range(N):
+            for c in range(C):
+                y = audio_input[n, c].numpy()
+                frames = librosa.util.frame(
+                    y, frame_length=self.frame_length, hop_length=self.hop_length
+                )
+                frame_energies = np.sum(frames**2, axis=0)
+                noise_threshold = np.percentile(frame_energies, self.noise_percentile)
+                noise_frames = frames[:, frame_energies <= noise_threshold]
+
+                if noise_frames.size > 0:
+                    noise_power = np.mean(noise_frames**2)
+                    signal_power = np.mean(y**2)
+                    snr = (
+                        10 * np.log10(signal_power / noise_power)
+                        if noise_power > 0
+                        else self.max_snr
+                    )
+                else:
+                    snr = self.max_snr
+
+                results.append(snr)
+
+        return torch.tensor(results).reshape(N, 1)
+    
 class AudioPreprocessor:
     def __init__(
         self,
