@@ -12,11 +12,15 @@ import torchaudio
 import onnxruntime
 from facenet_pytorch import MTCNN
 import numpy as np
-
+import cv2
+from PIL import Image
+import sys
+sys.path.append('../../..')
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
-from .iil import Decomposer, CholeskyWhitening
+from collections import namedtuple
 
+from .iil import Decomposer, CholeskyWhitening
 
 # ====================================
 #             VISUAL BRANCH
@@ -27,6 +31,8 @@ class Flatten(nn.Module):
 
 
 class BasicBlockIR(nn.Module):
+    """ BasicBlock for IRNet
+    """
     def __init__(self, in_channel, depth, stride):
         super(BasicBlockIR, self).__init__()
         if in_channel == depth:
@@ -34,20 +40,19 @@ class BasicBlockIR(nn.Module):
         else:
             self.shortcut_layer = nn.Sequential(
                 nn.Conv2d(in_channel, depth, (1, 1), stride, bias=False),
-                nn.BatchNorm2d(depth),
-            )
+                nn.BatchNorm2d(depth))
         self.res_layer = nn.Sequential(
             nn.BatchNorm2d(in_channel),
             nn.Conv2d(in_channel, depth, (3, 3), (1, 1), 1, bias=False),
             nn.BatchNorm2d(depth),
             nn.PReLU(depth),
             nn.Conv2d(depth, depth, (3, 3), stride, 1, bias=False),
-            nn.BatchNorm2d(depth),
-        )
+            nn.BatchNorm2d(depth))
 
     def forward(self, x):
         shortcut = self.shortcut_layer(x)
         res = self.res_layer(x)
+
         return res + shortcut
 
 
@@ -57,20 +62,18 @@ def get_block(in_channel, depth, num_units, stride=2):
     ]
 
 
-class Bottleneck:
-    def __init__(self, in_channel, depth, stride):
-        self.in_channel = in_channel
-        self.depth = depth
-        self.stride = stride
+class Bottleneck(namedtuple('Block', ['in_channel', 'depth', 'stride'])):
+    '''A named tuple describing a ResNet block.'''
 
 
-def get_blocks(num_layers=50):
+def get_blocks(num_layers=100):
     return [
-        get_block(64, 64, 3),
-        get_block(64, 128, 4),
-        get_block(128, 256, 14),
-        get_block(256, 512, 3),
+        get_block(in_channel=64, depth=64, num_units=3),
+        get_block(in_channel=64, depth=128, num_units=13),
+        get_block(in_channel=128, depth=256, num_units=30),
+        get_block(in_channel=256, depth=512, num_units=3)
     ]
+
 
 
 def initialize_weights(modules):
@@ -87,49 +90,64 @@ def initialize_weights(modules):
 
 
 class Backbone(nn.Module):
-    def __init__(self, input_size=(112, 112), num_layers=50, mode="ir"):
+    def __init__(self, input_size, num_layers, mode='ir'):
+        """ Args:
+            input_size: input_size of backbone
+            num_layers: num_layers of backbone
+            mode: support ir or irse
+        """
         super(Backbone, self).__init__()
-        self.input_layer = nn.Sequential(
-            nn.Conv2d(3, 64, (3, 3), 1, 1, bias=False), nn.BatchNorm2d(64), nn.PReLU(64)
-        )
-
+        assert input_size[0] in [112, 224], \
+            "input_size should be [112, 112] or [224, 224]"
+        assert num_layers in [18, 34, 50, 100, 152, 200], \
+            "num_layers should be 18, 34, 50, 100 or 152"
+        assert mode in ['ir', 'ir_se'], \
+            "mode should be ir or ir_se"
+        self.input_layer = nn.Sequential(nn.Conv2d(3, 64, (3, 3), 1, 1, bias=False),
+                                      nn.BatchNorm2d(64), nn.PReLU(64))
         blocks = get_blocks(num_layers)
-        modules = [
-            BasicBlockIR(b.in_channel, b.depth, b.stride)
-            for block in blocks
-            for b in block
-        ]
-        self.body = nn.Sequential(*modules)
+        unit_module = BasicBlockIR
+        output_channel = 512
 
-        self.output_layer = nn.Sequential(
-            nn.BatchNorm2d(512),
-            nn.Dropout(0.4),
-            Flatten(),
-            nn.Linear(512 * 7 * 7, 512),
-            nn.BatchNorm1d(512, affine=False),
-        )
+        self.output_layer = nn.Sequential(nn.BatchNorm2d(output_channel),
+                                    nn.Dropout(0.4), Flatten(),
+                                    nn.Linear(output_channel * 7 * 7, 512),
+                                    nn.BatchNorm1d(512, affine=False))
+        modules = []
+        for block in blocks:
+            for bottleneck in block:
+                modules.append(
+                    unit_module(bottleneck.in_channel, bottleneck.depth,
+                                bottleneck.stride))
+        self.body = nn.Sequential(*modules)
 
         initialize_weights(self.modules())
 
     def forward(self, x):
+        
+        # current code only supports one extra image
+        # it comes with a extra dimension for number of extra image. We will just squeeze it out for now
         x = self.input_layer(x)
-        for module in self.body:
+
+        for idx, module in enumerate(self.body):
             x = module(x)
+
         x = self.output_layer(x)
         norm = torch.norm(x, 2, 1, True)
         output = torch.div(x, norm)
+
         return output, norm
+    
 
-
-def IR_50(input_size=(112, 112)):
-    return Backbone(input_size, 50, "ir")
+def IR_101(input_size=(112, 112)):
+    return Backbone(input_size, 100, "ir")
 
 
 def load_pretrained_model(path):
     # load model and pretrained statedict
-    model = IR_50()
+    model = IR_101()
     statedict = torch.load(
-        os.path.join(path, "adaface_ir50_ms1mv2.ckpt"), weights_only=False
+        os.path.join(path, "adaface_ir101_ms1mv3.ckpt"), weights_only=False
     )["state_dict"]
     model_statedict = {
         key[6:]: val for key, val in statedict.items() if key.startswith("model.")
@@ -160,7 +178,7 @@ class AdaFace(nn.Module):
             raise ValueError("Input must be a PyTorch tensor.")
 
         # Normalize to match AdaFace training: mean=0.5, std=0.5
-        images = (images - 0.5) / 0.5
+        # images = (images - 0.5) / 0.5
 
         embeddings, _ = self.model(images)
         return embeddings
@@ -168,6 +186,30 @@ class AdaFace(nn.Module):
     def compute_similarities(self, e_i, e_j):
         return np.dot(e_i, e_j.T) / (np.linalg.norm(e_i) * np.linalg.norm(e_j)) * 100
 
+
+class QualityAdaFace(nn.Module):
+    def __init__(self, path: str, freeze=True):
+        super(QualityAdaFace, self).__init__()
+        original_model = AdaFace(path, freeze)
+        self.input_layer = original_model.model.input_layer
+        self.body = original_model.model.body
+        self.dropout = nn.Dropout(p=0.5)
+        self.fc = nn.Linear(512, 1).cuda()
+
+        ckpt_path = os.path.join(path, "adaface_sdd_fiqa_mod.pth")
+        checkpoint = torch.load(ckpt_path)
+        self.load_state_dict(checkpoint)
+        if freeze:
+            self.eval()
+        
+    def forward(self, x):
+        x = self.input_layer(x)
+        x = self.body(x)
+        x = x.mean(dim=(2, 3))
+        x = self.dropout(x)
+        x = self.fc(x)
+        return x
+    
 
 class ReDimNet(nn.Module):
     def __init__(self, freeze=True):
@@ -243,7 +285,8 @@ class ImagePreprocessor:
         step: int = 1,
         crop_face: bool = True,
         estimate_head_pose: bool = True,
-        head_pose_dir: str = None,
+        models_dir: str = None,
+        estimate_quality: bool = True,
         pad_mode: str = "repeat",  # 'repeat' or 'zeros'
         device: str = "cuda",
     ):
@@ -251,6 +294,7 @@ class ImagePreprocessor:
         self.step = step
         self.crop_face = crop_face
         self.estimate_head_pose = estimate_head_pose
+        self.estimate_quality = estimate_quality
         self.pad_mode = pad_mode
         self.device = device
 
@@ -264,90 +308,51 @@ class ImagePreprocessor:
             )
 
         if estimate_head_pose:
-            self.head_pose_estimator = HeadPose(head_pose_dir)
+            self.head_pose_estimator = HeadPose(models_dir)
+        
+        if self.estimate_quality:
+            self.quality_estimator = QualityAdaFace(
+                path=os.path.join(models_dir), freeze=True
+            ).to(device)
 
-        self.transform = transforms.Compose([transforms.Lambda(lambda x: x.float())])
+        # self.transform = transforms.Compose([transforms.Lambda(lambda x: x.float())])
+        self.transform = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
     def __call__(self, video_input: torch.Tensor, fps: float) -> torch.Tensor:
         tensor = self._process_video(video_input, fps)
         return tensor
 
-    def _crop_face(self, frame: np.ndarray) -> np.ndarray:
-        # Returns a cropped face if detected, otherwise None.
-        face_crop = self.face_detector(frame)
-        return face_crop
+    def _crop_faces(self, frames: np.ndarray) -> np.ndarray:
+        cropped_faces = []
+        for img in frames:
+            # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(img)
+            img_cropped = self.face_detector(img)
+            if img_cropped is None:
+                continue
+            cropped_faces.append(img_cropped)
+        return torch.stack(cropped_faces) if cropped_faces else None
 
-    def _get_face_with_fallback(
-        self, frame: np.ndarray, window: list, idx: int
-    ) -> np.ndarray:
-        face = self._crop_face(frame)
-        if face is not None:
-            return face, True
-
-        # 1. try to find a frontal frame
-        if self.estimate_head_pose:
-            next_idx = idx + 1
-            while next_idx < len(window):
-
-                relative_frontal_idx = self._select_frontal_frame(
-                    window[next_idx:]
-                )  # return relative index
-                if relative_frontal_idx is None:  # No more frames
-                    break
-
-                frontal_idx = next_idx + relative_frontal_idx
-
-                fallback_frame = window[frontal_idx].numpy()
-                face = self._crop_face(fallback_frame)
-
-                if face is not None:
-                    return face, True
-
-                next_idx = frontal_idx + 1  # continue searching from last found index
-
-        # 2. If estimate_head_pose is False, try a naive approach over all frames in window (except the original idx)
-        else:
-            for i, frame in enumerate(window):
-                if i == idx:
-                    continue  # already checked
-                candidate = self._crop_face(frame.numpy())
-                if candidate is not None:
-                    return candidate, True
-
-        # 3. If we exhaust all fallback options, return a failure
-        return None, False
 
     def _check_frontal_face(self, image):
         yaw, pitch, roll = self.head_pose_estimator(image)
-        return abs(yaw) < 30 and abs(pitch) < 30 and abs(roll) < 30
+        return abs(yaw) < 20 and abs(pitch) < 20 and abs(roll) < 20
 
     def _select_frontal_frame(self, frames: list):
         # Returns the first frame with a frontal face
+        frontal_frames = []
         for idx, frame in enumerate(frames):
             if self._check_frontal_face(frame):
-                return idx
-        else:
-            return None  # No frontal face found
+                frontal_frames.append(frame.numpy())
+        return frontal_frames if frontal_frames else None
 
-    # def _pad_window(self, window: torch.Tensor, target_length: int) -> torch.Tensor:
-    #     T = window.shape[0]
-
-    #     if T >= target_length:
-    #         return window
-
-    #     if self.pad_mode == 'repeat':
-    #         repeat_factor = (target_length // T) + 1
-    #         window = window.repeat(repeat_factor, 1, 1, 1)
-    #         window = window[:target_length]
-
-    #     elif self.pad_mode == 'zeros':
-    #         padding = torch.zeros((target_length - T, *window.shape[1:]), dtype=window.dtype, device=window.device)
-    #         window = torch.cat([window, padding], dim=0)
-
-    # else:
-    #     raise ValueError(f"Invalid padding mode: {self.pad_mode}")
-
-    #     return window
+    def _estimate_quality(self, frames: torch.Tensor) -> Tuple[torch.Tensor, float]:
+        if len(frames) > 10:
+            step = len(frames) // 10
+            frames = frames[::step]
+        qualities = self.quality_estimator(frames.to(self.device))
+        best_quality = torch.argmax(qualities).item()
+        return frames[best_quality], qualities[best_quality]
 
     def _process_video(
         self, video_input: torch.Tensor, fps: float
@@ -355,6 +360,7 @@ class ImagePreprocessor:
         # video_input: Tensor of shape (T, H, W, C) in uint8.
         fps = int(fps)
         num_frames = video_input.shape[0]
+        # input_video = input_video[:, :, :, ::-1]
 
         if self.window_len == -1:  # use the entire video
             windows = [video_input]
@@ -362,7 +368,6 @@ class ImagePreprocessor:
         else:  # split video into windows
             frames_per_window = self.window_len * fps  # number of frames in a window
             step_frames = self.step * fps  # number of frames to skip between windows
-            # usable_frames = (num_frames // fps) * fps # drop the last few frames if not enough for a window
 
             # process video in windows
             windows = [
@@ -370,53 +375,62 @@ class ImagePreprocessor:
                 for i in range(0, num_frames, step_frames)
             ]
 
-        frames = []
+        final_frames = []
+        qualities = []
         valid_mask = []
         for idx, window in enumerate(windows):
             is_valid = True
             # select frontal frame
             if self.estimate_head_pose:
-                idx = self._select_frontal_frame(window)
+                frames = self._select_frontal_frame(window)
 
-                if idx is None:
+                if frames is None:
                     frame = torch.zeros(
                         (3, 112, 112), dtype=torch.float32
                     )  # empty face
-                    frames.append(frame)
+                    final_frames.append(frame)
                     valid_mask.append(False)
+                    qualities.append(float('-inf'))
+                    continue
+                frames = np.array(frames)
             else:
-                idx = len(window) // 2
-
-            frame = window[idx].numpy()
+                frames = window.numpy()
 
             # crop face
             if self.crop_face:
-                cropped_face, found = self._get_face_with_fallback(frame, window, idx)
+                cropped_faces = self._crop_faces(frames)
 
-                if found:
-                    frame = cropped_face
+                if cropped_faces is not None:
+                    frames = cropped_faces
                 else:
                     frame = torch.zeros(
                         (3, 112, 112), dtype=torch.float32
                     )  # empty face
-                    is_valid = False
+                    final_frames.append(frame)
+                    valid_mask.append(False)
+                    qualities.append(float('-inf'))
+                    continue
 
-            # apply transform
-            if is_valid:
-                frame = self.transform(frame)
-                frame = frame / 255.0
-
-            frames.append(frame)
-
-            # mask for valid frames
-            if is_valid:
-                valid_mask.append(True)
+            if self.estimate_quality:
+                if not isinstance(frames, torch.Tensor):
+                    frames = torch.tensor(frames)
+                best_frame, quality = self._estimate_quality(frames)
             else:
-                valid_mask.append(False)
+                best_frame = frames[0]
+                quality = float('-inf')
 
-        # tensor output and validity mask
-        return torch.stack(frames, dim=0), torch.tensor(valid_mask, dtype=torch.bool)
+            best_frame = best_frame / 255.0
+            best_frame = self.transform(best_frame)
+            final_frames.append(best_frame)
+            qualities.append(quality)
+            valid_mask.append(True)
 
+        return torch.stack(final_frames, dim=0), torch.tensor(valid_mask, dtype=torch.bool), torch.tensor(qualities, dtype=torch.float32)
+
+# ====================================
+#             AUDIO BRANCH
+# ====================================
+      
 class AudioMetric(ABC):
     @abstractmethod
     def __call__(self, audio_input: torch.Tensor) -> torch.Tensor:
