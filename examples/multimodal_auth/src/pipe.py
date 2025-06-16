@@ -1,8 +1,9 @@
+import sys
+sys.path.append('../../..')
+
 from abc import ABC, abstractmethod
-import copy
 import warnings
 import librosa
-import torch.nn.functional as F
 import torch
 import torch.nn as nn
 from typing import Any, Dict, Literal, Optional, Callable, Tuple, Mapping
@@ -12,10 +13,7 @@ import torchaudio
 import onnxruntime
 from facenet_pytorch import MTCNN
 import numpy as np
-import cv2
 from PIL import Image
-import sys
-sys.path.append('../../..')
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
 from collections import namedtuple
@@ -209,44 +207,6 @@ class QualityAdaFace(nn.Module):
         x = self.dropout(x)
         x = self.fc(x)
         return x
-    
-
-class ReDimNet(nn.Module):
-    def __init__(self, freeze=True):
-        super(ReDimNet, self).__init__()
-        self._prepare_model(freeze)
-
-    def _prepare_model(self, freeze):
-        self.model = torch.hub.load(
-            repo_or_dir="IDRnD/ReDimNet",
-            model="ReDimNet",
-            model_name="b6",
-            train_type="ptn",
-            dataset="vox2",
-            # force_reload=True
-        )
-
-        if freeze:
-            for param in self.model.parameters():
-                param.requires_grad = False
-            self.model.eval()
-
-    def forward(self, audios):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=FutureWarning)
-
-            # embeddings = []
-
-            # for audio in audios:
-            #     emb = self.model(audio)
-            #     embeddings.append(emb.flatten())
-
-            # embeddings = torch.stack(embeddings, dim=0)
-            embeddings = self.model(audios)
-            return embeddings
-
-    def compute_similarities(self, e_i, e_j):
-        return np.dot(e_i, e_j.T) / (np.linalg.norm(e_i) * np.linalg.norm(e_j)) * 100
 
 
 class HeadPose:
@@ -430,6 +390,43 @@ class ImagePreprocessor:
 # ====================================
 #             AUDIO BRANCH
 # ====================================
+
+class ReDimNet(nn.Module):
+    def __init__(self, freeze=True):
+        super(ReDimNet, self).__init__()
+        self._prepare_model(freeze)
+
+    def _prepare_model(self, freeze):
+        self.model = torch.hub.load(
+            repo_or_dir="IDRnD/ReDimNet",
+            model="ReDimNet",
+            model_name="b6",
+            train_type="ptn",
+            dataset="vox2",
+            # force_reload=True
+        )
+
+        if freeze:
+            for param in self.model.parameters():
+                param.requires_grad = False
+            self.model.eval()
+
+    def forward(self, audios):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=FutureWarning)
+
+            # embeddings = []
+
+            # for audio in audios:
+            #     emb = self.model(audio)
+            #     embeddings.append(emb.flatten())
+
+            # embeddings = torch.stack(embeddings, dim=0)
+            embeddings = self.model(audios)
+            return embeddings
+
+    def compute_similarities(self, e_i, e_j):
+        return np.dot(e_i, e_j.T) / (np.linalg.norm(e_i) * np.linalg.norm(e_j)) * 100
       
 class AudioMetric(ABC):
     @abstractmethod
@@ -685,6 +682,10 @@ class AudioPreprocessor:
         return audios, valid_mask
 
 
+# ====================================
+#             PIPELINE
+# ====================================
+
 class MultiModalAuthPipeline(BasePipeline):
     """
     Pipeline for multimodal authentication with deepfake detection module.
@@ -739,4 +740,55 @@ class MultiModalAuthPipeline(BasePipeline):
         # Preprocess inputs
         inputs = self.preprocess(inputs)
 
-        # Extract embeddings from ea
+        # Extract embeddings from each modality
+        feats = self.extract_features(inputs)
+        
+        output['video'] = feats['video']
+        output['audio'] = feats['audio']
+        
+        if self.iil_mode == "whitening":
+            # Feature whitening
+            if self.backbones_frozen:
+                with torch.no_grad():
+                    feats['audio'] = self.audio_whitening(feats['audio'])
+                    feats['video'] = self.video_whitening(feats['video'])
+                    
+                    output['audio_w'] = feats['audio']
+                    output['video_w'] = feats['video']
+        
+        # Project and fuse embeddings into one vector
+        fus_out: dict = self.fusion(
+            {modality: feats[modality] for modality in self.fusion.modalities},
+            output_projections=True,
+        )
+        
+        output["audio_proj"] = fus_out["audio_proj"]
+        output["video_proj"] = fus_out["video_proj"]
+        
+        z_f = self.dropout(self.relu(self.fusion_reg(fus_out["embedding"])))
+        
+        if self.iil_mode == "crossdf":
+            z_f, z_os, _ = self.decomposer(z_f)
+            output["id_embedding"] = z_os
+            
+        output["embedding"] = z_f
+        
+        # Pass the fused embeddings to the head
+        head_out = self.downstream_pass(output)
+        
+        output["logits"] = head_out["logits"]
+        return output
+
+    def verify(self, inputs: Dict[str, Any]) -> torch.Tensor:
+        similarities = {}
+
+        for modality in self.fusion.modalities:
+            embedding = inputs[modality]
+            refference = inputs[modality + "_ref"]
+
+            sim = self.feature_extractors[modality].compute_similarities(
+                embedding, refference
+            )
+            similarities[modality] = sim
+
+        return similarities
