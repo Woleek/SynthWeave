@@ -1,7 +1,11 @@
+from abc import ABC, abstractmethod
+import copy
 import warnings
+import librosa
+import torch.nn.functional as F
 import torch
 import torch.nn as nn
-from typing import Any, Dict, Optional, Callable, Tuple, Mapping
+from typing import Any, Dict, Literal, Optional, Callable, Tuple, Mapping
 from torchvision import transforms
 import os
 import torchaudio
@@ -15,6 +19,9 @@ sys.path.append('../../..')
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
 from collections import namedtuple
+
+from .iil import Decomposer, CholeskyWhitening
+
 # ====================================
 #             VISUAL BRANCH
 # ====================================
@@ -420,7 +427,68 @@ class ImagePreprocessor:
 
         return torch.stack(final_frames, dim=0), torch.tensor(valid_mask, dtype=torch.bool), torch.tensor(qualities, dtype=torch.float32)
 
+# ====================================
+#             AUDIO BRANCH
+# ====================================
+      
+class AudioMetric(ABC):
+    @abstractmethod
+    def __call__(self, audio_input: torch.Tensor) -> torch.Tensor:
+        pass
 
+    @abstractmethod
+    def normalize_metric(self, metric: torch.Tensor) -> torch.Tensor:
+        pass
+
+
+class SNREstimator(AudioMetric):
+    def __init__(
+        self,
+        frame_length=1024,  # Number of samples per frame for audio analysis
+        hop_length=512,  # Number of samples between frames
+        noise_percentile=10,  # Percentile threshold for noise estimation
+        max_snr=30,  # Maximum SNR value when noise power is very low or zero
+    ):
+        self.frame_length = frame_length
+        self.hop_length = hop_length
+        self.noise_percentile = noise_percentile
+        self.max_snr = max_snr
+
+    def normalize_metric(self, metric: torch.Tensor) -> torch.Tensor:
+        """
+        Normalize SNR values to be between 0 and 1
+        """
+        return torch.clamp(1 - (metric / self.max_snr), 0, 1)
+
+    def __call__(self, audio_input: torch.Tensor) -> torch.Tensor:
+        N, C, T = audio_input.shape
+        results = []
+
+        for n in range(N):
+            for c in range(C):
+                y = audio_input[n, c].numpy()
+                frames = librosa.util.frame(
+                    y, frame_length=self.frame_length, hop_length=self.hop_length
+                )
+                frame_energies = np.sum(frames**2, axis=0)
+                noise_threshold = np.percentile(frame_energies, self.noise_percentile)
+                noise_frames = frames[:, frame_energies <= noise_threshold]
+
+                if noise_frames.size > 0:
+                    noise_power = np.mean(noise_frames**2)
+                    signal_power = np.mean(y**2)
+                    snr = (
+                        10 * np.log10(signal_power / noise_power)
+                        if noise_power > 0
+                        else self.max_snr
+                    )
+                else:
+                    snr = self.max_snr
+
+                results.append(snr)
+
+        return torch.tensor(results).reshape(N, 1)
+    
 class AudioPreprocessor:
     def __init__(
         self,
@@ -430,6 +498,7 @@ class AudioPreprocessor:
         max_len: int = 4,
         pad_mode: str = "repeat",  # 'repeat' or 'zeros'
         device: str = "cuda",
+        use_vad: bool = False, # VAD flag option
     ):
         self.window_len = window_len
         self.step = step
@@ -437,6 +506,20 @@ class AudioPreprocessor:
         self.max_len = max_len
         self.device = device
         self.pad_mode = pad_mode
+        self.use_vad = use_vad
+
+        if self.use_vad:
+            self._load_vad_model()
+            
+    def _load_vad_model(self):
+        # Load the Silero VAD model
+        self.vad_model, utils = torch.hub.load(
+            repo_or_dir="snakers4/silero-vad",
+            model="silero_vad",
+            force_reload=False,
+        )
+        self.get_speech_timestamps = utils[0]
+        self.vad_model.to(self.device)
 
     def __call__(self, audio_input: torch.Tensor, sr: int) -> torch.Tensor:
         tensor = self._process_audio(audio_input, sr)
@@ -457,6 +540,79 @@ class AudioPreprocessor:
             raise ValueError(f"Invalid padding mode: {self.pad_mode}")
 
         return audio
+    
+    def _process_voice_only(
+        self, audio_window: torch.Tensor, timestamps: list
+    ) -> torch.Tensor:
+        """
+        Processes an audio window to keep only voice-active sections and repeat them to match original length.
+        Assumes mono audio with shape (1, samples).
+        Args:
+            audio_window: Tensor of shape (1, samples) for mono audio
+            timestamps: List of dictionaries with 'start' and 'end' keys indicating voice sections
+        Returns:
+            Processed audio window with only voice sections, repeated to match original length
+        """
+        # For mono audio with shape (1, samples)
+        window_length = audio_window.shape[1]
+
+        # Extract voice-active sections
+        voice_sections = []
+        for ts in timestamps:
+            start, end = ts["start"], min(ts["end"], window_length)
+            voice_sections.append(audio_window[0, start:end])
+
+        # Create result tensor
+        result = torch.zeros_like(audio_window)
+
+        if voice_sections:  # If we found voice sections
+            # Concatenate all voice sections
+            voice_only = torch.cat(voice_sections)
+
+            # Repeat voice sections to fill the original length
+            if voice_only.numel() > 0:
+                repeats_needed = window_length // voice_only.numel() + 1
+                repeated_voice = voice_only.repeat(repeats_needed)
+                result[0, :] = repeated_voice[:window_length]
+                return result
+
+        # Return original if no processing could be done
+        return audio_window
+
+    def _apply_vad(self, audio_windows: torch.Tensor) -> list:
+        """
+        Apply Voice Activity Detection to each audio window.
+        Args:
+            audio_windows: Tensor of shape [num_windows, channels, samples]
+        Returns:
+            List of speech timestamps for each window
+        """
+        vad_results = []
+
+        # Process each window
+        for window_idx in range(audio_windows.shape[0]):
+            # Get the current window and ensure it's in the right format for VAD
+            window = audio_windows[window_idx]
+
+            # Ensure the audio is in the correct format for Silero VAD (mono)
+            if window.dim() > 1 and window.shape[0] > 1:
+                window = window.mean(dim=0)
+
+            # Ensure the tensor is [1, samples] as expected by the VAD model
+            if window.dim() == 1:
+                window = window.unsqueeze(0)
+
+            # Move to the same device as the VAD model
+            window = window.to(self.device)
+
+            # Get speech timestamps
+            speech_timestamps = self.get_speech_timestamps(
+                window, self.vad_model, sampling_rate=self.sample_rate
+            )
+
+            vad_results.append(speech_timestamps)
+
+        return vad_results
 
     def _process_audio(
         self, audio_input: torch.Tensor, sr: int
@@ -512,19 +668,26 @@ class AudioPreprocessor:
         valid_mask = torch.ones(
             audios.shape[0], dtype=torch.bool
         )  # valid mask for all windows
+        
+        # Apply VAD if enabled
+        vad_info = None
+        if self.use_vad:
+            vad_info = self._apply_vad(audios)
+
+            # Update valid_mask based on VAD results
+            for i, timestamps in enumerate(vad_info):
+                if not timestamps:  # No speech detected in this window
+                    valid_mask[i] = False
+                else:
+                    # Process window to keep only voice sections and repeat them
+                    audios[i] = self._process_voice_only(audios[i], timestamps)
+        
         return audios, valid_mask
 
 
 class MultiModalAuthPipeline(BasePipeline):
-    """Pipeline for multimodal authentication with deepfake detection module.
-
-    Implements a complete pipeline workflow in the following sequence:
-    1. Video and audio inputs (full or windowed)
-    3. Preprocessing (face detection and alignment, voice activity detection and speech fragments extraction)
-    4. Uni-modal feature extraction
-    5. Fusion
-    6. Decision (2x verification + deepfake detection)
-    7. Hard voting output
+    """
+    Pipeline for multimodal authentication with deepfake detection module.
     """
 
     def __init__(
@@ -534,25 +697,46 @@ class MultiModalAuthPipeline(BasePipeline):
         detection_head: Optional[nn.Module] = None,
         processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
         freeze_backbone: bool = True,
+        iil_mode: Literal["none", "crossdf", "friday", "whitening"] = "whitening"
     ):
         super(MultiModalAuthPipeline, self).__init__(
             models, fusion, detection_head, processors, freeze_backbone
         )
+        
+        self.iil_mode = iil_mode
+        self.backbones_frozen = freeze_backbone
+        audio_dim = self.fusion.input_dims.get("audio", 192)
+        video_dim = self.fusion.input_dims.get("video", 512)
+        
+        out_dim = self.fusion.output_dim
+        
+        if self.iil_mode == "crossdf":
+            self.decomposer = Decomposer(dim=out_dim)
+            
+        elif self.iil_mode == "whitening":
+            self.audio_whitening = CholeskyWhitening(
+                audio_dim, 
+                mode='ZCA',
+                eps=1e-8,  # Slightly higher for more aggressive decorrelation
+                track_running_stats=True,
+                momentum=0.05  # Slower adaptation, more stable
+            )
+            self.video_whitening = CholeskyWhitening(
+                video_dim,
+                mode='ZCA', 
+                eps=1e-8,
+                track_running_stats=True,
+                momentum=0.05
+            )
+        
+        self.fusion_reg = nn.LayerNorm(out_dim)
+        self.relu = nn.LeakyReLU(inplace=True)
+        self.dropout = nn.Dropout(p=self.fusion.dropout_p)
 
     def forward(self, inputs: Dict[str, Any]) -> torch.Tensor:
-        outs = super().forward(inputs, output_feats=True, output_projections=True)
-        return outs
+        output = {}
+        
+        # Preprocess inputs
+        inputs = self.preprocess(inputs)
 
-    def verify(self, inputs: Dict[str, Any]) -> torch.Tensor:
-        similarities = {}
-
-        for modality in self.fusion.modalities:
-            embedding = inputs[modality]
-            refference = inputs[modality + "_ref"]
-
-            sim = self.feature_extractors[modality].compute_similarities(
-                embedding, refference
-            )
-            similarities[modality] = sim
-
-        return similarities
+        # Extract embeddings from ea

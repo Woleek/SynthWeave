@@ -29,8 +29,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Process and encode multimodal data")
 
     # Dataset options
-    parser.add_argument("--dataset", choices=["DeepSpeak_v1_1", "SWAN_DF"],
-                   required=True, help="Which dataset to load")
+    parser.add_argument(
+        "--dataset",
+        choices=["DeepSpeak_v1_1", "SWAN_DF"],
+        required=True,
+        help="Which dataset to load",
+    )
     parser.add_argument(
         "--window_len", type=int, default=4, help="Window length for processing"
     )
@@ -38,8 +42,13 @@ def parse_args():
         "--window_step", type=int, default=1, help="Step size between windows"
     )
     # SWAN-DF specific
-    parser.add_argument("--resolutions",  nargs="*", default=None,
-                   help="Subset of fake resolutions to keep", choices=[None, "160", "256", "320"])
+    parser.add_argument(
+        "--resolutions",
+        nargs="*",
+        default=None,
+        help="Subset of fake resolutions to keep",
+        choices=[None, "160", "256", "320"],
+    )
 
     # Processing options
     parser.add_argument(
@@ -409,7 +418,7 @@ def main(args: argparse.Namespace):
         "video_encoder": "AdaFace" if args.encode else None,
         "audio_encoder": "ReDimNet" if args.encode else None,
     }
-    
+
     if args.resolutions:
         config["resolutions"] = args.resolutions
 
@@ -437,7 +446,7 @@ def main(args: argparse.Namespace):
         "audio_processor": aud_proc,
         "mode": "minimal",
     }
-    
+
     if args.dataset == "SWAN_DF":
         ds_specific = {
             "root_df": "../../../data/SWAN-DF",
@@ -451,7 +460,9 @@ def main(args: argparse.Namespace):
     datasets = {}
     try:
         for split in ["train", "dev", "test"]:
-            datasets[split] = get_dataset(args.dataset, split=split, **ds_common, **ds_specific)
+            datasets[split] = get_dataset(
+                args.dataset, split=split, **ds_common, **ds_specific
+            )
     except Exception as e:
         logger.error(f"Failed to load datasets: {e}")
         return

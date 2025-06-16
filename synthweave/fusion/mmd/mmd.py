@@ -75,14 +75,17 @@ class MMD(BaseFusion):
         )
         self._num_layers = kwargs.get("num_layers", 3)
         logger.info(f"MMD initialized with {self._num_layers} layers.")
-        
+
         num_att_heads: int = kwargs.get("num_att_heads", 1)
 
         # Stack L layers of MMDBlock
         self.blocks = nn.ModuleList(
-            [MMDBlock(self.proj_dim, num_att_heads, dropout_p) for _ in range(self._num_layers)]
+            [
+                MMDBlock(self.proj_dim, num_att_heads, dropout_p)
+                for _ in range(self._num_layers)
+            ]
         )
-        
+
         # Final projection layer
         self.fc_layer = LinearXavier(
             self.proj_dim * len(modality_keys), output_dim, bias
@@ -102,16 +105,18 @@ class MMD(BaseFusion):
             1. Passes through L MMDBlock layers
             2. Concatenates refined modality features
         """
-        emb_list = [embeddings[k].unsqueeze(1) for k in self.modalities] # list[(B, 1, PROJ)]
-        
+        emb_list = [
+            embeddings[k].unsqueeze(1) for k in self.modalities
+        ]  # list[(B, 1, PROJ)]
+
         # Pass through L MMDBlocks
         for block in self.blocks:
-            emb_list = block(emb_list) # list length preserved
+            emb_list = block(emb_list)  # list length preserved
 
         # Concatenate the refined modality features
-        cls_tokens = [emb[:, 0] for emb in emb_list] # list[(B, PROJ)]
-        fusion_vector = torch.cat(cls_tokens, dim=1) # (B, M * PROJ)
-        
+        cls_tokens = [emb[:, 0] for emb in emb_list]  # list[(B, PROJ)]
+        fusion_vector = torch.cat(cls_tokens, dim=1)  # (B, M * PROJ)
+
         # Final projection layer
         fusion_vector = self.fc_layer(fusion_vector)
 

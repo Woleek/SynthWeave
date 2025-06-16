@@ -2,30 +2,6 @@ from torch import nn
 import torch.nn.functional as F
 from collections import OrderedDict
 
-
-class LazyLinearXavier(nn.LazyLinear):
-    """A lazy linear layer with Xavier uniform initialization.
-
-    This layer automatically determines its input size on first use and
-    initializes weights using Xavier uniform initialization.
-    """
-
-    def __init__(self, out_features: int, bias: bool = True):
-        """
-        Args:
-            out_features (int): Size of output features
-            bias (bool, optional): If True, adds a learnable bias. Defaults to True.
-        """
-        super(LazyLinearXavier, self).__init__(out_features, bias)
-
-    def reset_parameters(self):
-        """Initializes the layer parameters using Xavier uniform initialization."""
-        if not self.has_uninitialized_params() and self.in_features != 0:
-            nn.init.xavier_uniform_(self.weight)
-            if self.bias is not None:
-                nn.init.constant_(self.bias, 0.01)
-
-
 class LinearXavier(nn.Linear):
     """A linear layer with Xavier uniform initialization."""
 
@@ -71,13 +47,17 @@ class ProjectionMLP(nn.Module):
         super(ProjectionMLP, self).__init__()
 
         self.proj = nn.Sequential(
-            OrderedDict(
-                [
-                    ("linear1", LinearXavier(in_dim, hidden_dim, bias)),
-                    ("batchnorm", nn.BatchNorm1d(hidden_dim)),
-                    ("gelu", nn.GELU()),
-                    ("dropout", nn.Dropout(dropout)),
-                    ("linear2", LinearXavier(hidden_dim, out_dim, bias)),
+            OrderedDict([
+                    ("linear1", nn.Linear(in_dim, in_dim)),
+                    ("bn1",   nn.BatchNorm1d(in_dim)),
+                    ("relu1",   nn.LeakyReLU()),
+                    ("drop1",   nn.Dropout(dropout)),
+
+                    ("linear2", nn.Linear(in_dim, out_dim)),
+                    # ("relu2",   nn.LeakyReLU()),
+                    # ("drop2",   nn.Dropout(dropout)),
+
+                    # ("linear3", nn.Linear(out_dim, out_dim)),
                 ]
             )
         )
@@ -115,11 +95,10 @@ class LazyProjectionMLP(nn.Module):
         self.proj = nn.Sequential(
             OrderedDict(
                 [
-                    ("linear1", LazyLinearXavier(hidden_dim, bias)),
-                    ("batchnorm", nn.BatchNorm1d(hidden_dim)),
-                    ("gelu", nn.GELU()),
+                    ("linear1", nn.LazyLinear(hidden_dim, bias)),
+                    ("relu", nn.ReLU()),
                     ("dropout", nn.Dropout(dropout)),
-                    ("linear2", LinearXavier(hidden_dim, out_dim, bias)),
+                    ("linear2", nn.Linear(hidden_dim, out_dim, bias)),
                 ]
             )
         )
@@ -139,7 +118,7 @@ class LazyProjectionMLP(nn.Module):
 class L2NormalizationLayer(nn.Module):
     """A layer that performs L2 normalization on the input tensor."""
 
-    def __init__(self, dim=-1, eps=1e-6):
+    def __init__(self, dim=1, eps=1e-12):
         """
         Args:
             dim (int, optional): Dimension along which to normalize. Defaults to -1.

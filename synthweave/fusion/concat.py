@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from typing import Dict, List, Optional
 from .base import BaseFusion
-from ..utils.modules import LazyLinearXavier, LinearXavier
 
 """
 Concatenation-based fusion modules for multimodal feature fusion.
@@ -71,12 +70,9 @@ class CFF(BaseFusion):
         )
 
         # Fully connected layer to process concatenated features
-        if self.proj_dim is None:
-            self.fc_layer = LazyLinearXavier(output_dim, bias)
-        else:
-            self.fc_layer = LinearXavier(
-                self.proj_dim * len(modality_keys), output_dim, bias
-            )
+        self.fc = nn.Linear(self.proj_dim * len(self.modalities), self.output_dim, bias=bias)
+        self.dropout = nn.Dropout(dropout_p)
+        self.relu = nn.ReLU()
 
         print("[INFO] This fusion expects embeddings of shape (batch_size, embed_dim).")
 
@@ -90,12 +86,13 @@ class CFF(BaseFusion):
         Returns:
             torch.Tensor: Fused representation with shape (batch_size, output_dim)
         """
-        # Concatenate embeddings
+        # Concatenate embeddings from all modalities
         concat_embeds = torch.cat(
             [embeddings[k] for k in self.modalities], dim=-1
-        )  # (B, M * EMB)
+        )  # (B, sum(Di))
 
-        # Process concatenated features
-        fusion_vector = self.fc_layer(concat_embeds)  # (B, EMB)
-
-        return fusion_vector
+        # 2. FC + Dropout + ReLU
+        out = self.fc(concat_embeds)
+        out = self.dropout(out)
+        out = self.relu(out)
+        return out

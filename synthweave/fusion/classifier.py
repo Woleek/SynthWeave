@@ -4,7 +4,6 @@ from typing import List, Optional
 
 from .. import logger
 from .base import BaseFusion
-from ..utils.modules import LazyLinearXavier
 
 """
 Classifier-based fusion modules for multimodal feature fusion.
@@ -71,7 +70,7 @@ class MV(BaseFusion):
         # Unify representations into same dimension
         if self._unify_embeds:
             self.unify_layers = nn.ModuleList(
-                [LazyLinearXavier(output_dim) for _ in range(n_modals)]
+                [nn.LazyLinear(output_dim) for _ in range(n_modals)]
             )
         else:
             self.unify_layers = nn.ModuleList([nn.Identity() for _ in range(n_modals)])
@@ -79,7 +78,7 @@ class MV(BaseFusion):
         # Linear classifiers for each modality
         self.clf_layers = nn.ModuleList(
             [
-                nn.Sequential(LazyLinearXavier(output_dim), nn.Sigmoid())
+                nn.Sequential(nn.LazyLinear(output_dim), nn.Sigmoid())
                 for _ in range(n_modals)
             ]
         )
@@ -163,7 +162,7 @@ class ASF(BaseFusion):
         # Unify representations into same dimension
         if self._unify_embeds:
             self.unify_layers = nn.ModuleList(
-                [LazyLinearXavier(output_dim) for _ in range(n_modals)]
+                [nn.LazyLinear(output_dim) for _ in range(n_modals)]
             )
         else:
             self.unify_layers = nn.ModuleList([nn.Identity() for _ in range(n_modals)])
@@ -171,7 +170,7 @@ class ASF(BaseFusion):
         # Linear classifiers for each modality
         self.clf_layers = nn.ModuleList(
             [
-                nn.Sequential(LazyLinearXavier(output_dim), nn.Sigmoid())
+                nn.Sequential(nn.LazyLinear(output_dim), nn.Sigmoid())
                 for _ in range(n_modals)
             ]
         )
@@ -257,18 +256,18 @@ class SF(BaseFusion):
         # Unify representations into same dimension
         if self._unify_embeds:
             self.unify_layers = nn.ModuleList(
-                [LazyLinearXavier(output_dim) for _ in range(n_modals)]
+                [nn.LazyLinear(output_dim) for _ in range(n_modals)]
             )
         else:
             self.unify_layers = nn.ModuleList([nn.Identity() for _ in range(n_modals)])
 
         # Linear classifiers for each modality
         self.clf_layers = nn.ModuleList(
-            [LazyLinearXavier(output_dim) for _ in range(n_modals)]
+            [nn.LazyLinear(output_dim) for _ in range(n_modals)]
         )
 
         self.score_fusion_layer = nn.Sequential(
-            LazyLinearXavier(output_dim), nn.Sigmoid()
+            nn.LazyLinear(output_dim), nn.Sigmoid()
         )
 
     def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
