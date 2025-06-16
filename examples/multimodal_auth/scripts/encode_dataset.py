@@ -29,8 +29,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Process and encode multimodal data")
 
     # Dataset options
-    parser.add_argument("--dataset", choices=["DeepSpeak_v1_1", "SWAN_DF"],
-                   required=True, help="Which dataset to load")
+    parser.add_argument(
+        "--dataset",
+        choices=["DeepSpeak_v1_1", "SWAN_DF"],
+        required=True,
+        help="Which dataset to load",
+    )
     parser.add_argument(
         "--data_dir",
         type=str,
@@ -38,8 +42,13 @@ def parse_args():
         help="Path to the dataset directory",
     )
     # SWAN-DF specific
-    parser.add_argument("--resolutions",  nargs="*", default=None,
-                   help="Subset of fake resolutions to keep", choices=[None, "160", "256", "320"])
+    parser.add_argument(
+        "--resolutions",
+        nargs="*",
+        default=None,
+        help="Subset of fake resolutions to keep",
+        choices=[None, "160", "256", "320"],
+    )
 
     # Save options
     parser.add_argument(
@@ -436,7 +445,7 @@ def main(args: argparse.Namespace):
         "preprocessed": True,
         "sample_mode": "sequence",
     }
-    
+
     if args.dataset == "SWAN_DF":
         ds_kwargs["av_codes"] = ["00", "11"]
 

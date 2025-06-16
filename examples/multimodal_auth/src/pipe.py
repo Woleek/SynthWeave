@@ -1,7 +1,9 @@
+import copy
 import warnings
+import torch.nn.functional as F
 import torch
 import torch.nn as nn
-from typing import Any, Dict, Optional, Callable, Tuple, Mapping
+from typing import Any, Dict, Literal, Optional, Callable, Tuple, Mapping
 from torchvision import transforms
 import os
 import torchaudio
@@ -11,6 +13,8 @@ import numpy as np
 
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
+from .iil import Decomposer, CholeskyWhitening
+
 
 # ====================================
 #             VISUAL BRANCH
@@ -507,15 +511,8 @@ class AudioPreprocessor:
 
 
 class MultiModalAuthPipeline(BasePipeline):
-    """Pipeline for multimodal authentication with deepfake detection module.
-
-    Implements a complete pipeline workflow in the following sequence:
-    1. Video and audio inputs (full or windowed)
-    3. Preprocessing (face detection and alignment, voice activity detection and speech fragments extraction)
-    4. Uni-modal feature extraction
-    5. Fusion
-    6. Decision (2x verification + deepfake detection)
-    7. Hard voting output
+    """
+    Pipeline for multimodal authentication with deepfake detection module.
     """
 
     def __init__(
@@ -525,14 +522,86 @@ class MultiModalAuthPipeline(BasePipeline):
         detection_head: Optional[nn.Module] = None,
         processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
         freeze_backbone: bool = True,
+        iil_mode: Literal["none", "crossdf", "friday", "whitening"] = "whitening"
     ):
         super(MultiModalAuthPipeline, self).__init__(
             models, fusion, detection_head, processors, freeze_backbone
         )
+        
+        self.iil_mode = iil_mode
+        self.backbones_frozen = freeze_backbone
+        audio_dim = self.fusion.input_dims.get("audio", 192)
+        video_dim = self.fusion.input_dims.get("video", 512)
+        
+        out_dim = self.fusion.output_dim
+        
+        if self.iil_mode == "crossdf":
+            self.decomposer = Decomposer(dim=out_dim)
+            
+        elif self.iil_mode == "whitening":
+            self.audio_whitening = CholeskyWhitening(
+                audio_dim, 
+                mode='ZCA',
+                eps=1e-8,  # Slightly higher for more aggressive decorrelation
+                track_running_stats=True,
+                momentum=0.05  # Slower adaptation, more stable
+            )
+            self.video_whitening = CholeskyWhitening(
+                video_dim,
+                mode='ZCA', 
+                eps=1e-8,
+                track_running_stats=True,
+                momentum=0.05
+            )
+        
+        self.fusion_reg = nn.LayerNorm(out_dim)
+        self.relu = nn.LeakyReLU(inplace=True)
+        self.dropout = nn.Dropout(p=self.fusion.dropout_p)
 
     def forward(self, inputs: Dict[str, Any]) -> torch.Tensor:
-        outs = super().forward(inputs, output_feats=True, output_projections=True)
-        return outs
+        output = {}
+        
+        # Preprocess inputs
+        inputs = self.preprocess(inputs)
+
+        # Extract embeddings from each modality
+        feats = self.extract_features(inputs)
+        
+        output['video'] = feats['video']
+        output['audio'] = feats['audio']
+        
+        if self.iil_mode == "whitening":
+            # Feature whitening
+            if self.backbones_frozen:
+                with torch.no_grad():
+                    feats['audio'] = self.audio_whitening(feats['audio'])
+                    feats['video'] = self.video_whitening(feats['video'])
+                    
+                    output['audio_w'] = feats['audio']
+                    output['video_w'] = feats['video']
+        
+        # Project and fuse embeddings into one vector
+        fus_out: dict = self.fusion(
+            {modality: feats[modality] for modality in self.fusion.modalities},
+            output_projections=True,
+        )
+        
+        output["audio_proj"] = fus_out["audio_proj"]
+        output["video_proj"] = fus_out["video_proj"]
+        
+        z_f = self.dropout(self.relu(self.fusion_reg(fus_out["embedding"])))
+        
+        if self.iil_mode == "crossdf":
+            z_f, z_os, _ = self.decomposer(z_f)
+            output["id_embedding"] = z_os
+            
+        output["embedding"] = z_f
+        
+        # Pass the fused embeddings to the head
+        head_out = self.downstream_pass(output)
+        
+        output["logits"] = head_out["logits"]
+        return output
 
     def verify(self, inputs: Dict[str, Any]) -> torch.Tensor:
         similarities = {}
