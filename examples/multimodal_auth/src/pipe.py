@@ -484,6 +484,7 @@ class AudioPreprocessor:
         max_len: int = 4,
         pad_mode: str = "repeat",  # 'repeat' or 'zeros'
         device: str = "cuda",
+        use_vad: bool = False, # VAD flag option
     ):
         self.window_len = window_len
         self.step = step
@@ -491,6 +492,20 @@ class AudioPreprocessor:
         self.max_len = max_len
         self.device = device
         self.pad_mode = pad_mode
+        self.use_vad = use_vad
+
+        if self.use_vad:
+            self._load_vad_model()
+            
+    def _load_vad_model(self):
+        # Load the Silero VAD model
+        self.vad_model, utils = torch.hub.load(
+            repo_or_dir="snakers4/silero-vad",
+            model="silero_vad",
+            force_reload=False,
+        )
+        self.get_speech_timestamps = utils[0]
+        self.vad_model.to(self.device)
 
     def __call__(self, audio_input: torch.Tensor, sr: int) -> torch.Tensor:
         tensor = self._process_audio(audio_input, sr)
@@ -511,6 +526,79 @@ class AudioPreprocessor:
             raise ValueError(f"Invalid padding mode: {self.pad_mode}")
 
         return audio
+    
+    def _process_voice_only(
+        self, audio_window: torch.Tensor, timestamps: list
+    ) -> torch.Tensor:
+        """
+        Processes an audio window to keep only voice-active sections and repeat them to match original length.
+        Assumes mono audio with shape (1, samples).
+        Args:
+            audio_window: Tensor of shape (1, samples) for mono audio
+            timestamps: List of dictionaries with 'start' and 'end' keys indicating voice sections
+        Returns:
+            Processed audio window with only voice sections, repeated to match original length
+        """
+        # For mono audio with shape (1, samples)
+        window_length = audio_window.shape[1]
+
+        # Extract voice-active sections
+        voice_sections = []
+        for ts in timestamps:
+            start, end = ts["start"], min(ts["end"], window_length)
+            voice_sections.append(audio_window[0, start:end])
+
+        # Create result tensor
+        result = torch.zeros_like(audio_window)
+
+        if voice_sections:  # If we found voice sections
+            # Concatenate all voice sections
+            voice_only = torch.cat(voice_sections)
+
+            # Repeat voice sections to fill the original length
+            if voice_only.numel() > 0:
+                repeats_needed = window_length // voice_only.numel() + 1
+                repeated_voice = voice_only.repeat(repeats_needed)
+                result[0, :] = repeated_voice[:window_length]
+                return result
+
+        # Return original if no processing could be done
+        return audio_window
+
+    def _apply_vad(self, audio_windows: torch.Tensor) -> list:
+        """
+        Apply Voice Activity Detection to each audio window.
+        Args:
+            audio_windows: Tensor of shape [num_windows, channels, samples]
+        Returns:
+            List of speech timestamps for each window
+        """
+        vad_results = []
+
+        # Process each window
+        for window_idx in range(audio_windows.shape[0]):
+            # Get the current window and ensure it's in the right format for VAD
+            window = audio_windows[window_idx]
+
+            # Ensure the audio is in the correct format for Silero VAD (mono)
+            if window.dim() > 1 and window.shape[0] > 1:
+                window = window.mean(dim=0)
+
+            # Ensure the tensor is [1, samples] as expected by the VAD model
+            if window.dim() == 1:
+                window = window.unsqueeze(0)
+
+            # Move to the same device as the VAD model
+            window = window.to(self.device)
+
+            # Get speech timestamps
+            speech_timestamps = self.get_speech_timestamps(
+                window, self.vad_model, sampling_rate=self.sample_rate
+            )
+
+            vad_results.append(speech_timestamps)
+
+        return vad_results
 
     def _process_audio(
         self, audio_input: torch.Tensor, sr: int
@@ -566,6 +654,20 @@ class AudioPreprocessor:
         valid_mask = torch.ones(
             audios.shape[0], dtype=torch.bool
         )  # valid mask for all windows
+        
+        # Apply VAD if enabled
+        vad_info = None
+        if self.use_vad:
+            vad_info = self._apply_vad(audios)
+
+            # Update valid_mask based on VAD results
+            for i, timestamps in enumerate(vad_info):
+                if not timestamps:  # No speech detected in this window
+                    valid_mask[i] = False
+                else:
+                    # Process window to keep only voice sections and repeat them
+                    audios[i] = self._process_voice_only(audios[i], timestamps)
+        
         return audios, valid_mask
 
 
@@ -623,55 +725,4 @@ class MultiModalAuthPipeline(BasePipeline):
         # Preprocess inputs
         inputs = self.preprocess(inputs)
 
-        # Extract embeddings from each modality
-        feats = self.extract_features(inputs)
-        
-        output['video'] = feats['video']
-        output['audio'] = feats['audio']
-        
-        if self.iil_mode == "whitening":
-            # Feature whitening
-            if self.backbones_frozen:
-                with torch.no_grad():
-                    feats['audio'] = self.audio_whitening(feats['audio'])
-                    feats['video'] = self.video_whitening(feats['video'])
-                    
-                    output['audio_w'] = feats['audio']
-                    output['video_w'] = feats['video']
-        
-        # Project and fuse embeddings into one vector
-        fus_out: dict = self.fusion(
-            {modality: feats[modality] for modality in self.fusion.modalities},
-            output_projections=True,
-        )
-        
-        output["audio_proj"] = fus_out["audio_proj"]
-        output["video_proj"] = fus_out["video_proj"]
-        
-        z_f = self.dropout(self.relu(self.fusion_reg(fus_out["embedding"])))
-        
-        if self.iil_mode == "crossdf":
-            z_f, z_os, _ = self.decomposer(z_f)
-            output["id_embedding"] = z_os
-            
-        output["embedding"] = z_f
-        
-        # Pass the fused embeddings to the head
-        head_out = self.downstream_pass(output)
-        
-        output["logits"] = head_out["logits"]
-        return output
-
-    def verify(self, inputs: Dict[str, Any]) -> torch.Tensor:
-        similarities = {}
-
-        for modality in self.fusion.modalities:
-            embedding = inputs[modality]
-            refference = inputs[modality + "_ref"]
-
-            sim = self.feature_extractors[modality].compute_similarities(
-                embedding, refference
-            )
-            similarities[modality] = sim
-
-        return similarities
+        # Extract embeddings from ea
