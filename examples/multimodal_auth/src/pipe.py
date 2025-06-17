@@ -17,8 +17,8 @@ from PIL import Image
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
 from collections import namedtuple
-
 from .iil import Decomposer, CholeskyWhitening
+import torch.nn.functional as F
 
 # ====================================
 #             VISUAL BRANCH
@@ -146,7 +146,7 @@ class Backbone(nn.Module):
         output = torch.div(x, norm)
 
         return output, norm
-    
+
 
 def IR_101(input_size=(112, 112)):
     return Backbone(input_size, 100, "ir")
@@ -197,7 +197,7 @@ class AdaFace(nn.Module):
         return embeddings
 
     def compute_similarities(self, e_i, e_j):
-        return e_i @ e_j.T * 100
+        return e_i @ e_j.T
 
 
 class QualityAdaFace(nn.Module):
@@ -442,8 +442,12 @@ class ReDimNet(nn.Module):
             return embeddings
 
     def compute_similarities(self, e_i, e_j):
-        return np.dot(e_i, e_j.T) / (np.linalg.norm(e_i) * np.linalg.norm(e_j)) * 100
-      
+        e_i = F.normalize(e_i, p=2, dim=1)
+        e_j = F.normalize(e_j, p=2, dim=1)
+        cos = torch.matmul(e_i, e_j.T)
+        cos_sim_rescaled = (cos + 1) / 2  # Rescale to [0, 1]
+        return cos_sim_rescaled
+
 class AudioMetric(ABC):
     @abstractmethod
     def __call__(self, audio_input: torch.Tensor) -> torch.Tensor:
@@ -501,7 +505,7 @@ class SNREstimator(AudioMetric):
                 results.append(snr)
 
         return torch.tensor(results).reshape(N, 1)
-    
+
 class AudioPreprocessor:
     def __init__(
         self,
