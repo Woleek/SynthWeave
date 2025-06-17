@@ -65,13 +65,24 @@ class Bottleneck(namedtuple('Block', ['in_channel', 'depth', 'stride'])):
 
 
 def get_blocks(num_layers=100):
-    return [
-        get_block(in_channel=64, depth=64, num_units=3),
-        get_block(in_channel=64, depth=128, num_units=13),
-        get_block(in_channel=128, depth=256, num_units=30),
-        get_block(in_channel=256, depth=512, num_units=3)
-    ]
-
+    if num_layers == 50:
+        return [
+            get_block(64, 64, 3),
+            get_block(64, 128, 4),
+            get_block(128, 256, 14),
+            get_block(256, 512, 3),
+        ]
+    elif num_layers == 100:
+        return [
+            get_block(in_channel=64, depth=64, num_units=3),
+            get_block(in_channel=64, depth=128, num_units=13),
+            get_block(in_channel=128, depth=256, num_units=30),
+            get_block(in_channel=256, depth=512, num_units=3)
+        ]
+    else:
+        raise ValueError(
+            "num_layers should be 50 or 100, but got {}".format(num_layers)
+        )
 
 
 def initialize_weights(modules):
@@ -140,13 +151,21 @@ class Backbone(nn.Module):
 def IR_101(input_size=(112, 112)):
     return Backbone(input_size, 100, "ir")
 
+def IR_50(input_size=(112, 112)):
+    return Backbone(input_size, 50, "ir")
 
-def load_pretrained_model(path):
+def load_pretrained_model(path, model_type: str = "ir101"):
     # load model and pretrained statedict
-    model = IR_101()
-    statedict = torch.load(
-        os.path.join(path, "adaface_ir101_ms1mv3.ckpt"), weights_only=False
-    )["state_dict"]
+    if model_type == "ir50":
+        model = IR_50()
+        statedict = torch.load(
+            os.path.join(path, "adaface_ir50_ms1mv2.ckpt"), weights_only=False
+        )["state_dict"]
+    elif model_type == "ir101":
+        model = IR_101()
+        statedict = torch.load(
+            os.path.join(path, "adaface_ir101_ms1mv3.ckpt"), weights_only=False
+        )["state_dict"]
     model_statedict = {
         key[6:]: val for key, val in statedict.items() if key.startswith("model.")
     }
@@ -156,12 +175,12 @@ def load_pretrained_model(path):
 
 
 class AdaFace(nn.Module):
-    def __init__(self, path: str, freeze=True):
+    def __init__(self, path: str, freeze=True, model_type: str = "ir101"):
         super(AdaFace, self).__init__()
-        self._prepare_model(path, freeze)
+        self._prepare_model(path, freeze, model_type)
 
-    def _prepare_model(self, path, freeze):
-        self.model = load_pretrained_model(path)
+    def _prepare_model(self, path, freeze, model_type):
+        self.model = load_pretrained_model(path, model_type)
 
         if freeze:
             for param in self.model.parameters():
@@ -174,21 +193,17 @@ class AdaFace(nn.Module):
         """
         if not torch.is_tensor(images):
             raise ValueError("Input must be a PyTorch tensor.")
-
-        # Normalize to match AdaFace training: mean=0.5, std=0.5
-        # images = (images - 0.5) / 0.5
-
         embeddings, _ = self.model(images)
         return embeddings
 
     def compute_similarities(self, e_i, e_j):
-        return np.dot(e_i, e_j.T) / (np.linalg.norm(e_i) * np.linalg.norm(e_j)) * 100
+        return e_i @ e_j.T * 100
 
 
 class QualityAdaFace(nn.Module):
     def __init__(self, path: str, freeze=True):
         super(QualityAdaFace, self).__init__()
-        original_model = AdaFace(path, freeze)
+        original_model = AdaFace(path, freeze, 'ir101')
         self.input_layer = original_model.model.input_layer
         self.body = original_model.model.body
         self.dropout = nn.Dropout(p=0.5)
