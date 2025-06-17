@@ -734,11 +734,14 @@ class MultiModalAuthPipeline(BasePipeline):
         detection_head: Optional[nn.Module] = None,
         processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
         freeze_backbone: bool = True,
-        iil_mode: Literal["none", "crossdf", "friday", "whitening"] = "whitening"
+        iil_mode: Literal["none", "crossdf", "friday", "whitening"] = "whitening",
+        device = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         super(MultiModalAuthPipeline, self).__init__(
             models, fusion, detection_head, processors, freeze_backbone
         )
+        
+        self.device = device
         
         self.iil_mode = iil_mode
         self.backbones_frozen = freeze_backbone
@@ -775,6 +778,22 @@ class MultiModalAuthPipeline(BasePipeline):
         
         # Preprocess inputs
         inputs = self.preprocess(inputs)
+        
+        if self.processors is not None:
+            # Drop invalid inputs
+            valid_vids = inputs["video"][1]
+            valid_auds = inputs["audio"][1]
+            valid_pairs = valid_vids & valid_auds
+            output["org_len"] = len(valid_vids)
+            output["valid_len"] = valid_pairs.sum().item()
+            
+            # Filter inputs based on valid masks
+            inputs["video"] = inputs["video"][0][valid_pairs]
+            inputs["audio"] = inputs["audio"][0][valid_pairs]
+        
+        # Ensure correct device
+        for modality in inputs:
+            inputs[modality] = inputs[modality].to(self.device)
 
         # Extract embeddings from each modality
         feats = self.extract_features(inputs)
