@@ -452,7 +452,7 @@ def main(args: argparse.Namespace):
     # PREPARE PIPELINE
     if not args.encoded:
         aud_model = ReDimNet(freeze=True)
-        img_model = AdaFace(path="../../../models/", freeze=True)
+        img_model = AdaFace(path="../../../models/", freeze=True, model_type='ir50')
 
         models = {"audio": aud_model, "video": img_model}
     else:
