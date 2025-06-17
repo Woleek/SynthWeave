@@ -201,9 +201,9 @@ class AdaFace(nn.Module):
 
 
 class QualityAdaFace(nn.Module):
-    def __init__(self, path: str, freeze=True):
+    def __init__(self, path: str, freeze=True, model_type: Literal["ir101", "ir50"] = "ir101"):
         super(QualityAdaFace, self).__init__()
-        original_model = AdaFace(path, freeze, 'ir101')
+        original_model = AdaFace(path, freeze, model_type)
         self.input_layer = original_model.model.input_layer
         self.body = original_model.model.body
         self.dropout = nn.Dropout(p=0.5)
@@ -262,6 +262,7 @@ class ImagePreprocessor:
         estimate_head_pose: bool = True,
         models_dir: str = None,
         estimate_quality: bool = True,
+        quality_model_type: Literal["ir101", "ir50"] = "ir101",
         pad_mode: str = "repeat",  # 'repeat' or 'zeros'
         device: str = "cuda",
     ):
@@ -287,7 +288,7 @@ class ImagePreprocessor:
         
         if self.estimate_quality:
             self.quality_estimator = QualityAdaFace(
-                path=os.path.join(models_dir), freeze=True
+                path=os.path.join(models_dir), freeze=True, model_type=quality_model_type
             ).to(device)
 
         # self.transform = transforms.Compose([transforms.Lambda(lambda x: x.float())])
@@ -400,7 +401,7 @@ class ImagePreprocessor:
             qualities.append(quality)
             valid_mask.append(True)
 
-        return torch.stack(final_frames, dim=0), torch.tensor(valid_mask, dtype=torch.bool), torch.tensor(qualities, dtype=torch.float32)
+        return torch.stack(final_frames, dim=0), torch.tensor(valid_mask, dtype=torch.bool)#, torch.tensor(qualities, dtype=torch.float32)
 
 # ====================================
 #             AUDIO BRANCH
@@ -700,6 +701,26 @@ class AudioPreprocessor:
 # ====================================
 #             PIPELINE
 # ====================================
+
+class ClassifierHead(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int = 256, dropout: float = 0.4, num_classes: int = 1):
+        super().__init__()
+        self.classifier = nn.Sequential(
+            # nn.Linear(input_dim, input_dim),
+            # nn.LayerNorm(input_dim),
+            # nn.LeakyReLU(),
+            # nn.Dropout(dropout),
+            # nn.Linear(input_dim, hidden_dim),
+            # nn.LayerNorm(hidden_dim),
+            # nn.LeakyReLU(),
+            # nn.Dropout(dropout),
+            nn.Linear(input_dim, num_classes),
+        )
+        
+        self.classifier
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.classifier(x)
 
 class MultiModalAuthPipeline(BasePipeline):
     """
