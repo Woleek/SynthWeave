@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 
 import sys
-sys.path.append('..')
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 from src.pipe import (
     MultiModalAuthPipeline,
     ImagePreprocessor,
@@ -41,15 +41,14 @@ class dotdict(dict):
 # print the current working directory
 print(f"Current working directory: {Path.cwd()}")
 
-fusion_module_dir = Path("../CAFF")
 models_dir = Path("../../../models")
 print(f"Models directory: {models_dir}")
 # config
-args = json.loads((fusion_module_dir / "args.json").read_text())
+args = json.loads((models_dir / "CAFF" / "args.json").read_text())
 args = dotdict(args)
 
 # weights
-weights_path = fusion_module_dir / "detection_module.ckpt"
+weights_path = models_dir / "CAFF" / "detection_module.ckpt"
 
 preprocessors = {
     "video": ImagePreprocessor(
