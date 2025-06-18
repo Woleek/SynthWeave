@@ -154,17 +154,19 @@ def IR_101(input_size=(112, 112)):
 def IR_50(input_size=(112, 112)):
     return Backbone(input_size, 50, "ir")
 
-def load_pretrained_model(path, model_type: str = "ir101"):
+def load_pretrained_model(path, model_type: str = "ir101", device: str = "cuda"):
     # load model and pretrained statedict
     if model_type == "ir50":
         model = IR_50()
         statedict = torch.load(
-            os.path.join(path, "adaface_ir50_ms1mv2.ckpt"), weights_only=False
+            os.path.join(path, "adaface_ir50_ms1mv2.ckpt"), weights_only=False, 
+            map_location=torch.device(device)
         )["state_dict"]
     elif model_type == "ir101":
         model = IR_101()
         statedict = torch.load(
-            os.path.join(path, "adaface_ir101_ms1mv3.ckpt"), weights_only=False
+            os.path.join(path, "adaface_ir101_ms1mv3.ckpt"), weights_only=False,
+            map_location=torch.device(device)
         )["state_dict"]
     model_statedict = {
         key[6:]: val for key, val in statedict.items() if key.startswith("model.")
@@ -175,12 +177,12 @@ def load_pretrained_model(path, model_type: str = "ir101"):
 
 
 class AdaFace(nn.Module):
-    def __init__(self, path: str, freeze=True, model_type: str = "ir101"):
+    def __init__(self, path: str, freeze=True, model_type: str = "ir101", device: str = "cuda"):
         super(AdaFace, self).__init__()
-        self._prepare_model(path, freeze, model_type)
+        self._prepare_model(path, freeze, model_type, device)
 
-    def _prepare_model(self, path, freeze, model_type):
-        self.model = load_pretrained_model(path, model_type)
+    def _prepare_model(self, path, freeze, model_type, device):
+        self.model = load_pretrained_model(path, model_type, device)
 
         if freeze:
             for param in self.model.parameters():
