@@ -42,10 +42,10 @@ class dotdict(dict):
 # print the current working directory
 print(f"Current working directory: {Path.cwd()}")
 
-models_dir = Path("../../../models")
+models_dir = Path("../../../models").resolve()
 print(f"Models directory: {models_dir}")
 
-sample_dir = Path("../notebooks/samples")
+sample_dir = Path("demo/samples").resolve()
 print(f"Sample directory: {sample_dir}")
 # config
 args = json.loads((models_dir / "CAFF" / "args.json").read_text())
@@ -55,7 +55,6 @@ args = dotdict(args)
 weights_path = models_dir / "CAFF" / "detection_module.ckpt"
 
 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-device = "cpu"
 print(f"Using device: {device}")
 
 preprocessors = {
@@ -142,36 +141,32 @@ def model_inference(ref, sample):
     with torch.no_grad():
         sim = pipe.verify(
             {
-                "video": sample_out["video"].cpu(),
-                "audio": sample_out["audio"].cpu(),
-                "video_ref": ref_out["video"].cpu(), 
-                "audio_ref": ref_out["audio"].cpu(),
+                "video": sample_out["video"].mean(dim=0).unsqueeze(0).cpu(),
+                "audio": sample_out["audio"].mean(dim=0).unsqueeze(0).cpu(),
+                "video_ref": ref_out["video"].mean(dim=0).unsqueeze(0).cpu(), 
+                "audio_ref": ref_out["audio"].mean(dim=0).unsqueeze(0).cpu(),
             }
         )
 
     # NOTE: Select aggregation methods across windows
     # vid_sim = sim["video"].max(dim=1).values                # Max similarity to any reference
-    vid_sim = torch.tensor(sim["video"]).mean(dim=1)  # Mean similarity to reference
+    vid_sim = torch.tensor(sim["video"]).item()
 
     vid_th = face_threshold.value # NOTE: set threshold for video similarity
 
-    passed = vid_sim > vid_th
-    print("Pass status:", passed.tolist())
-    print("Face verified:", passed.all().item())
+    passed = vid_sim >= vid_th
+    print("Face verified:", passed)
 
     # NOTE: Select aggregation methods across windows
     # aud_sim = sim["audio"].max(dim=1).values                # Max similarity to any reference
-    aud_sim = torch.tensor(sim["audio"]).mean(dim=1)  # Mean similarity to reference
+    aud_sim = torch.tensor(sim["audio"]).item()
 
     aud_th = audio_threshold.value  # NOTE: set threshold for audio similarity 0 - 1
 
-    passed = aud_sim > aud_th
-    print("Pass status:", passed.tolist())
-    print(
-        "Voice verified:", passed.all().item()
-    )  # True if all windows passed the threshold
+    passed = aud_sim >= aud_th
+    print("Voice verified:", passed)
 
-    return [aud_sim.mean().item(), vid_sim.mean().item(), prob_per_clip.mean().item()]
+    return [aud_sim, vid_sim, prob_per_clip.mean().item()]
 
 
 def preprocess_video(video_file) -> tuple[Tensor, Tensor, Dict[str, Any]]:
@@ -212,13 +207,13 @@ def record_video():
     """Handle webcam recording - this will be handled by Gradio's built-in video recording"""
     return "Video recorded! Click 'Process Video' to analyze."
 
-def authenticate(ref_video, sample_video, audio_thresh, face_thresh):
+def authenticate(ref_video, sample_video, audio_thresh, face_thresh, df_thresh):
     results = process_video(ref_video, sample_video)
     audio_sim, face_sim, deepfake = results
     color_updates = update_colors(
-        audio_sim, face_sim, audio_thresh, face_thresh, deepfake
+        audio_sim, face_sim, deepfake, audio_thresh, face_thresh, df_thresh
     )
-    return [*color_updates, deepfake]
+    return [*color_updates]
 
 
 # Create Gradio interface
@@ -347,8 +342,8 @@ with gr.Blocks(
         gr.Examples(
             examples=[
                 [
-                    f"{sample_dir}/john_real.mp4",
-                    f"{sample_dir}/john_face_fake.mp4",
+                    sample_dir / "john_real.mp4",
+                    sample_dir / "john_face_fake.mp4",
                     0.60,
                     0.60,
                     0.5,
@@ -357,8 +352,8 @@ with gr.Blocks(
                     0.83,
                 ],
                 [
-                    f"{sample_dir}/john_real.mp4",
-                    f"{sample_dir}/john_face_fake.mp4",
+                    sample_dir / "john_real.mp4",
+                    sample_dir / "john_face_fake.mp4",
                     0.60,
                     0.14,
                     0.5,
@@ -367,8 +362,8 @@ with gr.Blocks(
                     0.55,
                 ],
                 [
-                    f"{sample_dir}/john_real.mp4",
-                    f"{sample_dir}/john_face_fake.mp4",
+                    sample_dir / "john_real.mp4",
+                    sample_dir / "john_face_fake.mp4",
                     0.22,
                     0.60,
                     0.70,
@@ -498,7 +493,7 @@ with gr.Blocks(
 
     authenticate_btn.click(
         fn=authenticate,
-        inputs=[ref_video, sample_video, audio_threshold, face_threshold],
+        inputs=[ref_video, sample_video, audio_threshold, face_threshold, deepfake_threshold],
         outputs=[audio_results, face_results, deepfake_results],
     )
 
