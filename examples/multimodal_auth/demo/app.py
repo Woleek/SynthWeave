@@ -60,13 +60,13 @@ print(f"Using device: {device}")
 preprocessors = {
     "video": ImagePreprocessor(
         window_len=4,
-        step=1,
+        step=2,
         estimate_quality=False,
         models_dir=models_dir,
         quality_model_type="ir50",
         device=device,
     ),
-    "audio": AudioPreprocessor(window_len=4, step=1, use_vad=False, device=device),
+    "audio": AudioPreprocessor(window_len=4, step=2, use_vad=False, device=device),
 }
 
 models = {
@@ -271,7 +271,7 @@ with gr.Blocks(
                 with gr.Row():
                     with gr.Column(scale=1):
                         audio_threshold = gr.Slider(
-                            label="Select Audio Threshold",
+                            label="Audio Threshold",
                             minimum=0,
                             maximum=1,
                             step=0.01,
@@ -288,7 +288,7 @@ with gr.Blocks(
 
                     with gr.Column(scale=1):
                         face_threshold = gr.Slider(
-                            label="Select Face Threshold",
+                            label="Face Threshold",
                             minimum=0,
                             maximum=1,
                             step=0.01,
@@ -305,7 +305,7 @@ with gr.Blocks(
 
                     with gr.Column(scale=1):
                         deepfake_threshold = gr.Slider(
-                            label="Select Deepfake Threshold",
+                            label="Deepfake Threshold",
                             minimum=0,
                             maximum=1,
                             step=0.01,
@@ -344,32 +344,52 @@ with gr.Blocks(
                 [
                     sample_dir / "john_real.mp4",
                     sample_dir / "john_face_fake.mp4",
-                    0.60,
-                    0.60,
-                    0.5,
-                    0.66,
-                    0.70,
-                    0.83,
+                    0.50,
+                    0.50,
+                    0.50,
+                    0.58,
+                    0.57,
+                    0.73,
                 ],
                 [
-                    sample_dir / "john_real.mp4",
-                    sample_dir / "john_face_fake.mp4",
-                    0.60,
-                    0.14,
-                    0.5,
-                    0.14,
-                    0.52,
-                    0.55,
+                    sample_dir / "jane_real.mp4",
+                    sample_dir / "jane_voice_fake.mp4",
+                    0.50,
+                    0.50,
+                    0.50,
+                    0.62,
+                    0.79,
+                    0.97,
                 ],
                 [
-                    sample_dir / "john_real.mp4",
-                    sample_dir / "john_face_fake.mp4",
-                    0.22,
-                    0.60,
-                    0.70,
-                    0.66,
-                    0.14,
+                    sample_dir / "joe_real.mp4",
+                    sample_dir / "joe_both_fake.mp4",
+                    0.50,
+                    0.50,
+                    0.50,
+                    0.71,
+                    0.01,
+                    0.88,
+                ],
+                [
+                    sample_dir / "joe_real.mp4",
+                    sample_dir / "joe_real_2.mp4",
+                    0.50,
+                    0.50,
+                    0.50,
+                    0.90,
+                    0.58,
+                    0.01,
+                ],
+                [
+                    sample_dir / "joe_real.mp4",
+                    sample_dir / "not_joe_real.mp4",
+                    0.50,
+                    0.50,
+                    0.50,
+                    0.68,
                     0.39,
+                    0.07,
                 ],
             ],
             inputs=[
@@ -387,6 +407,13 @@ with gr.Blocks(
                 face_results,
                 deepfake_results,
             ],
+            example_labels=[
+                "John - Real vs Face Fake",
+                "Jane - Real vs Voice Fake",
+                "Joe - Real vs Both Fake",
+                "Joe - Real vs Real 2",
+                "Joe - Real vs Not Joe Real",
+            ]
         )
 
     def update_ref_video_inputs(choice):
@@ -413,6 +440,32 @@ with gr.Blocks(
             return gr.update(value=video_file, visible=True)
         else:
             return gr.update(value=None, visible=False)
+        
+    def update_colors(audio_sim, face_sim, deepfake, audio_threshold, face_threshold, deepfake_threshold):
+        audio_class = (
+            "above-threshold"
+            if float(audio_sim) >= float(audio_threshold)
+            else "below-threshold"
+        )
+        face_class = (
+            "above-threshold"
+            if float(face_sim) >= float(face_threshold)
+            else "below-threshold"
+        )
+        deepfake_class = (
+            "above-threshold"
+            if float(deepfake) <= float(deepfake_threshold)
+            else "below-threshold"
+        )
+
+        return [
+            gr.update(value=audio_sim, elem_classes=audio_class),
+            gr.update(value=face_sim, elem_classes=face_class),
+            gr.update(value=deepfake, elem_classes=deepfake_class),
+        ]
+        
+    def refresh_colors(*args):
+        return update_colors(*args)
 
     def update_audio_feedback(audio_sim, face_sim, deepfake_prob, audio_thresh, face_thresh, deepfake_thresh):
         color_updates = update_colors(
@@ -459,6 +512,12 @@ with gr.Blocks(
             deepfake_results
         ]
     )
+    
+    audio_results.change(
+        fn=refresh_colors,
+        inputs=[audio_results, face_results, deepfake_results, audio_threshold, face_threshold, deepfake_threshold],
+        outputs=[audio_results, face_results, deepfake_results]
+    )
 
     face_threshold.change(
         fn=update_face_feedback,
@@ -477,6 +536,12 @@ with gr.Blocks(
             deepfake_results
         ]
     )
+    
+    face_results.change(
+        fn=refresh_colors,
+        inputs=[audio_results, face_results, deepfake_results, audio_threshold, face_threshold, deepfake_threshold],
+        outputs=[audio_results, face_results, deepfake_results]
+    )
 
     deepfake_threshold.change(
         fn=update_deepfake_feedback,
@@ -490,35 +555,18 @@ with gr.Blocks(
         ],
         outputs=[deepfake_feedback, audio_results, face_results, deepfake_results],
     )
+    
+    deepfake_results.change(
+        fn=refresh_colors,
+        inputs=[audio_results, face_results, deepfake_results, audio_threshold, face_threshold, deepfake_threshold],
+        outputs=[audio_results, face_results, deepfake_results]
+    )
 
     authenticate_btn.click(
         fn=authenticate,
         inputs=[ref_video, sample_video, audio_threshold, face_threshold, deepfake_threshold],
         outputs=[audio_results, face_results, deepfake_results],
     )
-
-    def update_colors(audio_sim, face_sim, deepfake, audio_threshold, face_threshold, deepfake_threshold):
-        audio_class = (
-            "above-threshold"
-            if float(audio_sim) >= float(audio_threshold)
-            else "below-threshold"
-        )
-        face_class = (
-            "above-threshold"
-            if float(face_sim) >= float(face_threshold)
-            else "below-threshold"
-        )
-        deepfake_class = (
-            "above-threshold"
-            if float(deepfake) <= float(deepfake_threshold)
-            else "below-threshold"
-        )
-
-        return [
-            gr.update(value=audio_sim, elem_classes=audio_class),
-            gr.update(value=face_sim, elem_classes=face_class),
-            gr.update(value=deepfake, elem_classes=deepfake_class),
-        ]
 
 
 # Launch the app
