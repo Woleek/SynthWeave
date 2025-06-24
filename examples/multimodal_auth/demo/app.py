@@ -13,6 +13,7 @@ import torch
 from torch._tensor import Tensor
 from torchvision.io import read_video
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 
 import sys
@@ -43,12 +44,19 @@ print(f"Current working directory: {Path.cwd()}")
 
 models_dir = Path("../../../models")
 print(f"Models directory: {models_dir}")
+
+sample_dir = Path("../notebooks/samples")
+print(f"Sample directory: {sample_dir}")
 # config
 args = json.loads((models_dir / "CAFF" / "args.json").read_text())
 args = dotdict(args)
 
 # weights
 weights_path = models_dir / "CAFF" / "detection_module.ckpt"
+
+device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+device = "cpu"
+print(f"Using device: {device}")
 
 preprocessors = {
     "video": ImagePreprocessor(
@@ -57,20 +65,16 @@ preprocessors = {
         estimate_quality=False,
         models_dir=models_dir,
         quality_model_type="ir50",
-        device="cuda"
+        device=device,
     ),
-    "audio": AudioPreprocessor(
-        window_len=4,
-        step=1,
-        use_vad=False,
-        device="cuda",
-    )
+    "audio": AudioPreprocessor(window_len=4, step=1, use_vad=False, device=device),
 }
 
 models = {
     "video": AdaFace(
         path=models_dir,
         model_type="ir50",
+        device=device,
     ),
     "audio": ReDimNet(),
 }
@@ -98,15 +102,15 @@ state_dict = torch.load(weights_path, map_location="cpu")["state_dict"]
 state_dict = {k.replace("pipeline.", ""): v for k, v in state_dict.items()}
 pipe.load_state_dict(state_dict, strict=False)
 
-pipe = pipe.cuda()
+pipe = pipe.to(device)
 pipe.eval()
 
 
 def get_results_css_styles():
     """Get CSS styles for the results HTML display"""
     return """
-    .below-threshold { background: red !important; font-weight: bold; }
-    .above-threshold { background: green !important; font-weight: bold; }
+    .below-threshold { background: rgba(255, 0, 0, 0.33) !important; font-weight: bold; }
+    .above-threshold { background: rgba(0, 255, 0, 0.33) !important; font-weight: bold; }
     """
 
 
@@ -130,8 +134,8 @@ def model_inference(ref, sample):
     probs = torch.sigmoid(sample_out["logits"]).cpu()
     prob_per_clip = probs.mean()
     preds_per_clip = (
-        prob_per_clip >= 0.5
-    ).long()  # NOTE: set threshold for DeepFake detection
+        prob_per_clip >= deepfake_threshold.value  
+    ).long() 
 
     print("Pred:", "Bonafide" if preds_per_clip.item() == 0 else "DeepFake")
 
@@ -208,12 +212,22 @@ def record_video():
     """Handle webcam recording - this will be handled by Gradio's built-in video recording"""
     return "Video recorded! Click 'Process Video' to analyze."
 
+def authenticate(ref_video, sample_video, audio_thresh, face_thresh):
+    results = process_video(ref_video, sample_video)
+    audio_sim, face_sim, deepfake = results
+    color_updates = update_colors(
+        audio_sim, face_sim, audio_thresh, face_thresh, deepfake
+    )
+    return [*color_updates, deepfake]
+
 
 # Create Gradio interface
 with gr.Blocks(
     title="MultimodalAuth Demo",
     theme=gr.themes.Ocean(
-        primary_hue=gr.themes.colors.sky, secondary_hue=gr.themes.colors.blue
+        primary_hue=gr.themes.colors.sky,
+        secondary_hue=gr.themes.colors.blue,
+        text_size=gr.themes.utils.sizes.text_lg,
     ),
     css=get_results_css_styles(),
 ) as app:
@@ -243,7 +257,6 @@ with gr.Blocks(
                         format="mp4"
                     )
 
-
                 with gr.Column(scale=1):
                     gr.Markdown("## 📹 Sample Video")
 
@@ -256,63 +269,62 @@ with gr.Blocks(
                         format="mp4"
                     )
 
-
         # Right Column - Results
         with gr.Column(scale=1):
             # Nested columns for thresholds and settings
-            with gr.Row():
-                with gr.Column(scale=1):
-                    gr.Markdown("## Audio threshold")
-                    audio_threshold = gr.Slider(
-                        label="Select Audio Threshold",
-                        minimum=0,
-                        maximum=1,
-                        step=0.01,
-                        value=0.75,
-                        info="Higher values increase sensitivity to audio cues.",
-                    )
-                    audio_feedback = gr.Textbox(
-                        value="Audio threshold set to 0.75",
-                        interactive=False,
-                        show_label=False,
-                        container=False,
-                        visible=True,
-                    )
+            with gr.Accordion("Settings", open=False):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        audio_threshold = gr.Slider(
+                            label="Select Audio Threshold",
+                            minimum=0,
+                            maximum=1,
+                            step=0.01,
+                            value=0.75,
+                            min_width=100,
+                        )
+                        audio_feedback = gr.Textbox(
+                            value="Audio threshold set to 0.75",
+                            interactive=False,
+                            show_label=False,
+                            container=False,
+                            visible=True,
+                        )
 
-                with gr.Column(scale=1):
-                    gr.Markdown("## Face Detection Threshold")
-                    face_threshold = gr.Slider(
-                        label="Select Face Detection Threshold",
-                        minimum=0,
-                        maximum=1,
-                        step=0.01,
-                        value=0.75,
-                        info="Higher values increase sensitivity to face detection.",
-                    )
-                    face_feedback = gr.Textbox(
-                        value="Face detection threshold set to 0.75",
-                        interactive=False,
-                        show_label=False,
-                        container=False,
-                        visible=True,
-                    )
+                    with gr.Column(scale=1):
+                        face_threshold = gr.Slider(
+                            label="Select Face Threshold",
+                            minimum=0,
+                            maximum=1,
+                            step=0.01,
+                            value=0.75,
+                            min_width=100,
+                        )
+                        face_feedback = gr.Textbox(
+                            value="Face threshold set to 0.75",
+                            interactive=False,
+                            show_label=False,
+                            container=False,
+                            visible=True,
+                        )
 
-            gr.Markdown("## Security Level")
-            security_level = gr.Slider(
-                label="Select Security Level",
-                minimum=0,
-                maximum=1,
-                step=0.1,
-                value=0.5,
-                info="Higher values increase security, but reduce accessibility.",
-            )
-            security_feedback = gr.Textbox(
-                value="Security level set to 0.5",
-                interactive=False,
-                show_label=False,
-                container=False,
-                visible=True,
-            )
+                    with gr.Column(scale=1):
+                        deepfake_threshold = gr.Slider(
+                            label="Select Deepfake Threshold",
+                            minimum=0,
+                            maximum=1,
+                            step=0.01,
+                            value=0.5,
+                            min_width=100,
+                        )
+                        deepfake_feedback = gr.Textbox(
+                            value="Deepfake threshold set to 0.5",
+                            interactive=False,
+                            show_label=False,
+                            container=False,
+                            visible=True,
+                        )
+
             authenticate_btn = gr.Button("Authenticate", variant="primary", size="lg")
 
             audio_results = gr.Number(
@@ -331,14 +343,62 @@ with gr.Blocks(
                 label="Deepfake Probability", value=0.0, interactive=False, precision=2
             )
 
-    # REFERENCE VIDEO
+    with gr.Row():
+        gr.Examples(
+            examples=[
+                [
+                    f"{sample_dir}/john_real.mp4",
+                    f"{sample_dir}/john_face_fake.mp4",
+                    0.60,
+                    0.60,
+                    0.5,
+                    0.66,
+                    0.70,
+                    0.83,
+                ],
+                [
+                    f"{sample_dir}/john_real.mp4",
+                    f"{sample_dir}/john_face_fake.mp4",
+                    0.60,
+                    0.14,
+                    0.5,
+                    0.14,
+                    0.52,
+                    0.55,
+                ],
+                [
+                    f"{sample_dir}/john_real.mp4",
+                    f"{sample_dir}/john_face_fake.mp4",
+                    0.22,
+                    0.60,
+                    0.70,
+                    0.66,
+                    0.14,
+                    0.39,
+                ],
+            ],
+            inputs=[
+                ref_video,
+                sample_video,
+                audio_threshold,
+                face_threshold,
+                deepfake_threshold,
+                audio_results,
+                face_results,
+                deepfake_results,
+            ],
+            outputs=[
+                audio_results,
+                face_results,
+                deepfake_results,
+            ],
+        )
+
     def update_ref_video_inputs(choice):
         return [
             gr.update(visible=(choice == "Upload Video")),
             gr.update(visible=(choice == "Record with Webcam")),
         ]
-
-
 
     def update_sample_video_inputs(choice):
         return [
@@ -346,15 +406,11 @@ with gr.Blocks(
             gr.update(visible=(choice == "Record with Webcam")),
         ]
 
-
-
     def video_handler(video_input):
         """Handle sample video input from either upload or webcam"""
         if video_input is None:
             return None
         return gr.update(value=video_input, visible=True)
-
-
 
     def handle_video_upload(video_file):
         """Handle video upload and show preview"""
@@ -363,27 +419,43 @@ with gr.Blocks(
         else:
             return gr.update(value=None, visible=False)
 
+    def update_audio_feedback(audio_sim, face_sim, deepfake_prob, audio_thresh, face_thresh, deepfake_thresh):
+        color_updates = update_colors(
+            audio_sim,
+            face_sim,
+            deepfake_prob,
+            audio_thresh,
+            face_thresh,
+            deepfake_thresh,
+        )
+        return [f"Audio threshold set to {audio_thresh:.2f}", *color_updates]
 
+    def update_face_feedback(audio_sim, face_sim, deepfake_prob, audio_thresh, face_thresh, deepfake_thresh):
+        color_updates = update_colors(audio_sim, face_sim, deepfake_prob, audio_thresh, face_thresh, deepfake_thresh)
+        return [f"Face detection threshold set to {face_thresh:.2f}", *color_updates]
 
-    def update_audio_feedback(value, audio_sim, face_sim, face_thresh, deepfake_prob):
-        color_updates = update_colors(audio_sim, face_sim, value, face_thresh, deepfake_prob)
-        return [f"Audio threshold set to {value:.2f}", *color_updates]
-
-    def update_face_feedback(value, audio_sim, face_sim, audio_thresh, deepfake_prob):
-        color_updates = update_colors(audio_sim, face_sim, audio_thresh, value, deepfake_prob)
-        return [f"Face detection threshold set to {value:.2f}", *color_updates]
-
-    def update_security_feedback(value):
-        return f"Security level set to {value:.2f}"
+    def update_deepfake_feedback(
+        audio_sim, face_sim, deepfake_prob, audio_thresh, face_thresh, deepfake_thresh
+    ):
+        color_updates = update_colors(
+            audio_sim,
+            face_sim,
+            deepfake_prob,
+            audio_thresh,
+            face_thresh,
+            deepfake_thresh,
+        )
+        return [f"Deepfake threshold set to {deepfake_thresh:.2f}", *color_updates]
 
     audio_threshold.change(
         fn=update_audio_feedback,
         inputs=[
-            audio_threshold,
             audio_results,
             face_results,
+            deepfake_results,
+            audio_threshold,
             face_threshold,
-            deepfake_results
+            deepfake_threshold
         ],
         outputs=[
             audio_feedback,
@@ -396,11 +468,12 @@ with gr.Blocks(
     face_threshold.change(
         fn=update_face_feedback,
         inputs=[
-            face_threshold,
             audio_results,
             face_results,
+            deepfake_results,
             audio_threshold,
-            deepfake_results
+            face_threshold,
+            deepfake_threshold
         ],
         outputs=[
             face_feedback,
@@ -409,17 +482,19 @@ with gr.Blocks(
             deepfake_results
         ]
     )
-    security_level.change(
-        fn=update_security_feedback,
-        inputs=[security_level],
-        outputs=[security_feedback],
-    )
 
-    def authenticate(ref_video, sample_video, audio_thresh, face_thresh):
-        results = process_video(ref_video, sample_video)
-        audio_sim, face_sim, deepfake = results
-        color_updates = update_colors(audio_sim, face_sim, audio_thresh, face_thresh, deepfake)
-        return [*color_updates, deepfake]
+    deepfake_threshold.change(
+        fn=update_deepfake_feedback,
+        inputs=[
+            audio_results,
+            face_results,
+            deepfake_results,
+            audio_threshold,
+            face_threshold,
+            deepfake_threshold,
+        ],
+        outputs=[deepfake_feedback, audio_results, face_results, deepfake_results],
+    )
 
     authenticate_btn.click(
         fn=authenticate,
@@ -427,7 +502,7 @@ with gr.Blocks(
         outputs=[audio_results, face_results, deepfake_results],
     )
 
-    def update_colors(audio_sim, face_sim, audio_threshold, face_threshold, deepfake):
+    def update_colors(audio_sim, face_sim, deepfake, audio_threshold, face_threshold, deepfake_threshold):
         audio_class = (
             "above-threshold"
             if float(audio_sim) >= float(audio_threshold)
@@ -440,7 +515,7 @@ with gr.Blocks(
         )
         deepfake_class = (
             "above-threshold"
-            if float(deepfake) <= 0.5
+            if float(deepfake) <= float(deepfake_threshold)
             else "below-threshold"
         )
 
@@ -453,4 +528,10 @@ with gr.Blocks(
 
 # Launch the app
 if __name__ == "__main__":
-    app.launch(server_name="0.0.0.0", server_port=7860, share=False, debug=True)
+    app.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        debug=True,
+        allowed_paths=[sample_dir],
+    )
