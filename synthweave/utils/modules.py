@@ -58,16 +58,12 @@ class ProjectionMLP(nn.Module):
 
         self.proj = nn.Sequential(
             OrderedDict([
-                    ("linear1", nn.Linear(in_dim, in_dim)),
-                    ("bn1",   nn.BatchNorm1d(in_dim)),
+                    ("linear1", nn.Linear(in_dim, hidden_dim)),
+                    ("bn1",   nn.BatchNorm1d(hidden_dim)),
                     ("relu1",   nn.LeakyReLU()),
                     ("drop1",   nn.Dropout(dropout)),
 
-                    ("linear2", nn.Linear(in_dim, out_dim)),
-                    # ("relu2",   nn.LeakyReLU()),
-                    # ("drop2",   nn.Dropout(dropout)),
-
-                    # ("linear3", nn.Linear(out_dim, out_dim)),
+                    ("linear2", nn.Linear(hidden_dim, out_dim)),
                 ]
             )
         )

@@ -42,7 +42,7 @@ class dotdict(dict):
 # print the current working directory
 print(f"Current working directory: {Path.cwd()}")
 
-models_dir = Path("../../../models").resolve()
+models_dir = Path("../../models").resolve()
 print(f"Models directory: {models_dir}")
 
 sample_dir = Path("demo/samples").resolve()

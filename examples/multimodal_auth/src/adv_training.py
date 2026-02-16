@@ -46,7 +46,7 @@ class JSDPredictionLoss(nn.Module):
         same = (la == lv)            # bool mask (B,)
         d    = jsd(pa, pv)           # (B,)
 
-        d[~same] = -d[~same]         # sign-flip for mismatched labels
+        d = torch.where(same, d, -d) # sign-flip for mismatched labels
         return d.mean()
 
 class JSDFeatureLoss(nn.Module):
@@ -72,7 +72,7 @@ class JSDFeatureLoss(nn.Module):
 
         same = (la == lv)
         d    = jsd(fa_s, fv_s)
-        d[~same] = -d[~same]
+        d = torch.where(same, d, -d)
         return d.mean()
 
 

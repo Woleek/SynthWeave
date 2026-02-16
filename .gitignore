@@ -164,3 +164,4 @@ cython_debug/
 logs/
 processed_data/
 encoded_data/
+models/

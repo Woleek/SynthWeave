@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .. import logger
 from .base import BaseFusion
@@ -37,70 +37,75 @@ class MV(BaseFusion):
     def __init__(
         self,
         output_dim: int,
-        n_modals: int,
-        dropout: bool = True,
+        modality_keys: List[str],
+        input_dims: Optional[Dict[str, int]] = None,
+        bias: bool = True,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
+        hidden_proj_dim: Optional[int] = None,
+        out_proj_dim: Optional[int] = None,
+        normalize_proj: bool = True,
+        **kwargs,
     ) -> None:
         """Initialize the MV module.
 
         Args:
             output_dim: Must be 1 for binary classification
-            n_modals: Number of modalities (must be odd)
-            dropout: Whether to use dropout
+            modality_keys: List of modality names to be fused (must be odd length)
+            input_dims: Dictionary mapping modality names to input dimensions
+            bias: Whether to include bias in linear layers
+            dropout_p: Dropout probability
             unify_embeds: Whether to project modalities to same dimension
+            hidden_proj_dim: Hidden dimension for projection layers
+            out_proj_dim: Output dimension for projection layers
+            normalize_proj: Whether to apply L2 normalization after projection
 
         Raises:
-            ValueError: If n_modals is even or output_dim != 1
+            ValueError: If number of modalities is even
         """
-        super(MV, self).__init__(dropout, unify_embeds)
+        super(MV, self).__init__(
+            output_dim=1,
+            modality_keys=modality_keys,
+            input_dims=input_dims,
+            bias=bias,
+            dropout_p=dropout_p,
+            unify_embeds=unify_embeds,
+            hidden_proj_dim=hidden_proj_dim,
+            out_proj_dim=out_proj_dim,
+            normalize=normalize_proj,
+        )
 
         logger.warning(
             "Note that this method outputs predictions instead of vectors and does not require additional classifier head."
         )
 
-        if len(n_modals) % 2 == 0:
+        if len(self.modalities) % 2 == 0:
             raise ValueError("Majority voting requires an odd number of modalities.")
 
         if output_dim != 1:
             logger.warning(
                 "This method is designed for binary classification. Setting `output_dim` to 1."
             )
-            output_dim = 1
 
-        # Unify representations into same dimension
-        if self._unify_embeds:
-            self.unify_layers = nn.ModuleList(
-                [nn.LazyLinear(output_dim) for _ in range(n_modals)]
-            )
-        else:
-            self.unify_layers = nn.ModuleList([nn.Identity() for _ in range(n_modals)])
-
-        # Linear classifiers for each modality
-        self.clf_layers = nn.ModuleList(
-            [
-                nn.Sequential(nn.LazyLinear(output_dim), nn.Sigmoid())
-                for _ in range(n_modals)
-            ]
+        self.clf_layers = nn.ModuleDict(
+            {
+                modal: nn.Sequential(nn.LazyLinear(1), nn.Sigmoid())
+                for modal in self.modalities
+            }
         )
 
-    def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
+    def _forward(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass for the MV module.
 
         Args:
-            embeddings: List of tensors from each modality
-                       Shape: [(batch_size, embed_dim), ...]
+            embeddings: Dictionary mapping modality names to projected tensors
+                       Shape per modality: (batch_size, embed_dim)
 
         Returns:
             torch.Tensor: Binary predictions with shape (batch_size, 1)
         """
-        # Unify representations into same dimension
-        proj_embeds = [
-            unify_layer(embed)
-            for unify_layer, embed in zip(self.unify_layers, embeddings)
-        ]
-
         # Get probabilities from each modality
-        logits = [layer(embed) for layer, embed in zip(self.clf_layers, proj_embeds)]
+        logits = [self.clf_layers[modal](embeddings[modal]) for modal in self.modalities]
 
         # Binarize predictions
         preds = [torch.round(logit) for logit in logits]
@@ -135,19 +140,37 @@ class ASF(BaseFusion):
     def __init__(
         self,
         output_dim: int,
-        n_modals: int,
-        dropout: bool = True,
+        modality_keys: List[str],
+        input_dims: Optional[Dict[str, int]] = None,
+        bias: bool = True,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
+        hidden_proj_dim: Optional[int] = None,
+        out_proj_dim: Optional[int] = None,
+        normalize_proj: bool = True,
+        **kwargs,
     ) -> None:
         """Initialize the ASF module.
 
         Args:
             output_dim: Must be 1 for binary classification
-            n_modals: Number of modalities
-            dropout: Whether to use dropout
+            modality_keys: List of modality names to be fused
+            input_dims: Dictionary mapping modality names to input dimensions
+            bias: Whether to include bias in linear layers
+            dropout_p: Dropout probability
             unify_embeds: Whether to project modalities to same dimension
         """
-        super(ASF, self).__init__(dropout, unify_embeds)
+        super(ASF, self).__init__(
+            output_dim=1,
+            modality_keys=modality_keys,
+            input_dims=input_dims,
+            bias=bias,
+            dropout_p=dropout_p,
+            unify_embeds=unify_embeds,
+            hidden_proj_dim=hidden_proj_dim,
+            out_proj_dim=out_proj_dim,
+            normalize=normalize_proj,
+        )
 
         logger.warning(
             "Note that this method outputs predictions instead of vectors and does not require additional classifier head."
@@ -157,45 +180,28 @@ class ASF(BaseFusion):
             logger.warning(
                 "This method is designed for binary classification. Setting `output_dim` to 1."
             )
-            output_dim = 1
-
-        # Unify representations into same dimension
-        if self._unify_embeds:
-            self.unify_layers = nn.ModuleList(
-                [nn.LazyLinear(output_dim) for _ in range(n_modals)]
-            )
-        else:
-            self.unify_layers = nn.ModuleList([nn.Identity() for _ in range(n_modals)])
-
-        # Linear classifiers for each modality
-        self.clf_layers = nn.ModuleList(
-            [
-                nn.Sequential(nn.LazyLinear(output_dim), nn.Sigmoid())
-                for _ in range(n_modals)
-            ]
+        self.clf_layers = nn.ModuleDict(
+            {
+                modal: nn.Sequential(nn.LazyLinear(1), nn.Sigmoid())
+                for modal in self.modalities
+            }
         )
 
         # Threshold for binarization
         self.threshold = 0.5
 
-    def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
+    def _forward(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass for the ASF module.
 
         Args:
-            embeddings: List of tensors from each modality
-                       Shape: [(batch_size, embed_dim), ...]
+            embeddings: Dictionary mapping modality names to projected tensors
+                       Shape per modality: (batch_size, embed_dim)
 
         Returns:
             torch.Tensor: Binary predictions with shape (batch_size, 1)
         """
-        # Unify representations into same dimension
-        proj_embeds = [
-            unify_layer(embed)
-            for unify_layer, embed in zip(self.unify_layers, embeddings)
-        ]
-
         # Get probabilities from each modality
-        logits = [layer(embed) for layer, embed in zip(self.clf_layers, proj_embeds)]
+        logits = [self.clf_layers[modal](embeddings[modal]) for modal in self.modalities]
 
         # Average scores
         avg_scores = torch.stack(logits, dim=-1).mean(dim=-1)
@@ -229,19 +235,37 @@ class SF(BaseFusion):
     def __init__(
         self,
         output_dim: int,
-        n_modals: int,
-        dropout: bool = True,
+        modality_keys: List[str],
+        input_dims: Optional[Dict[str, int]] = None,
+        bias: bool = True,
+        dropout_p: float = 0.1,
         unify_embeds: bool = True,
+        hidden_proj_dim: Optional[int] = None,
+        out_proj_dim: Optional[int] = None,
+        normalize_proj: bool = True,
+        **kwargs,
     ) -> None:
         """Initialize the SF module.
 
         Args:
             output_dim: Must be 1 for binary classification
-            n_modals: Number of modalities
-            dropout: Whether to use dropout
+            modality_keys: List of modality names to be fused
+            input_dims: Dictionary mapping modality names to input dimensions
+            bias: Whether to include bias in linear layers
+            dropout_p: Dropout probability
             unify_embeds: Whether to project modalities to same dimension
         """
-        super(SF, self).__init__(dropout, unify_embeds)
+        super(SF, self).__init__(
+            output_dim=1,
+            modality_keys=modality_keys,
+            input_dims=input_dims,
+            bias=bias,
+            dropout_p=dropout_p,
+            unify_embeds=unify_embeds,
+            hidden_proj_dim=hidden_proj_dim,
+            out_proj_dim=out_proj_dim,
+            normalize=normalize_proj,
+        )
 
         logger.warning(
             "Note that this method outputs predictions instead of vectors and does not require additional classifier head."
@@ -251,46 +275,29 @@ class SF(BaseFusion):
             logger.warning(
                 "This method is designed for binary classification. Setting `output_dim` to 1."
             )
-            output_dim = 1
-
-        # Unify representations into same dimension
-        if self._unify_embeds:
-            self.unify_layers = nn.ModuleList(
-                [nn.LazyLinear(output_dim) for _ in range(n_modals)]
-            )
-        else:
-            self.unify_layers = nn.ModuleList([nn.Identity() for _ in range(n_modals)])
-
-        # Linear classifiers for each modality
-        self.clf_layers = nn.ModuleList(
-            [nn.LazyLinear(output_dim) for _ in range(n_modals)]
+        self.clf_layers = nn.ModuleDict(
+            {modal: nn.LazyLinear(1) for modal in self.modalities}
         )
 
         self.score_fusion_layer = nn.Sequential(
-            nn.LazyLinear(output_dim), nn.Sigmoid()
+            nn.LazyLinear(1), nn.Sigmoid()
         )
 
-    def _forward(self, embeddings: List[torch.Tensor]) -> torch.Tensor:
+    def _forward(self, embeddings: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass for the SF module.
 
         Args:
-            embeddings: List of tensors from each modality
-                       Shape: [(batch_size, embed_dim), ...]
+            embeddings: Dictionary mapping modality names to projected tensors
+                       Shape per modality: (batch_size, embed_dim)
 
         Returns:
             torch.Tensor: Binary predictions with shape (batch_size, 1)
         """
-        # Unify representations into same dimension
-        proj_embeds = [
-            unify_layer(embed)
-            for unify_layer, embed in zip(self.unify_layers, embeddings)
-        ]
-
         # Get probabilities from each modality
-        logits = [layer(embed) for layer, embed in zip(self.clf_layers, proj_embeds)]
+        logits = [self.clf_layers[modal](embeddings[modal]) for modal in self.modalities]
 
         # Score fusion
-        scores = torch.stack(logits, dim=-1)
+        scores = torch.cat(logits, dim=1)
         preds = self.score_fusion_layer(scores)
 
         # Binarize predictions

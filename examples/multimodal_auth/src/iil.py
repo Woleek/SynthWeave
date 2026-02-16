@@ -181,44 +181,19 @@ class CholeskyWhitening(nn.Module):
             dtype=cov.dtype
         )
         
-        try:
-            # Cholesky decomposition: reg_cov = L @ L.T
-            L = torch.linalg.cholesky(reg_cov)
-            
-            # Whitening matrix is L^{-1}
-            whitening_matrix = torch.linalg.solve_triangular(
-                torch.eye(self.num_features, device=L.device, dtype=L.dtype), 
-                L, 
-                upper=False
-            )
-            
-            if self.mode == 'ZCA':
-                # For ZCA whitening, we need the symmetric whitening matrix
-                # ZCA = U @ diag(1/sqrt(eigenvals)) @ U.T
-                # But we can compute it via: ZCA = W.T @ W where W is PCA whitening
-                # However, with Cholesky we get: whitening_matrix = L^{-1}
-                # For ZCA, we need: cov^{-1/2} which is symmetric
-                
-                # Use eigendecomposition for ZCA mode
-                eigenvals, eigenvecs = torch.linalg.eigh(reg_cov)
-                eigenvals = torch.clamp(eigenvals, min=self.eps)
-                
-                whitening_matrix = eigenvecs @ torch.diag(1.0 / torch.sqrt(eigenvals)) @ eigenvecs.T
-            
-            return whitening_matrix
-            
-        except RuntimeError as e:
-            # Fallback to eigendecomposition if Cholesky fails
-            print(f"Cholesky decomposition failed: {e}. Falling back to eigendecomposition.")
-            eigenvals, eigenvecs = torch.linalg.eigh(reg_cov)
-            eigenvals = torch.clamp(eigenvals, min=self.eps)
-            
-            if self.mode == 'ZCA':
-                whitening_matrix = eigenvecs @ torch.diag(1.0 / torch.sqrt(eigenvals)) @ eigenvecs.T
-            else:  # PCA mode
-                whitening_matrix = torch.diag(1.0 / torch.sqrt(eigenvals)) @ eigenvecs.T
-            
-            return whitening_matrix
+        # Eigendecomposition: reg_cov = U @ diag(λ) @ U.T
+        eigenvals, eigenvecs = torch.linalg.eigh(reg_cov)
+        eigenvals = torch.clamp(eigenvals, min=self.eps)
+        inv_sqrt = torch.diag(1.0 / torch.sqrt(eigenvals))
+
+        if self.mode == 'ZCA':
+            # ZCA whitening: W = U @ diag(1/√λ) @ U.T  (symmetric, preserves input space)
+            whitening_matrix = eigenvecs @ inv_sqrt @ eigenvecs.T
+        else:  # PCA mode
+            # PCA whitening: W = diag(1/√λ) @ U.T  (rotates to principal components)
+            whitening_matrix = inv_sqrt @ eigenvecs.T
+
+        return whitening_matrix
     
     def _update_running_stats(self, mean: torch.Tensor, cov: torch.Tensor) -> None:
         """Update running statistics with exponential moving average."""

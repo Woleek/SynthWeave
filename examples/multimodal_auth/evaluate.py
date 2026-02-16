@@ -26,7 +26,7 @@ import matplotlib.patches as mpatches
 import numpy as np
 import matplotlib
 from train import ClassifierHead
-from sklearn.metrics import roc_curve # Import roc_curve
+from sklearn.metrics import roc_curve, f1_score
 import time
 
 matplotlib.use("Agg")
@@ -41,6 +41,31 @@ class dotdict(dict):
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _resolve_best_checkpoint(ckpt_dir: Path) -> Path:
+    last_ckpt = ckpt_dir / "last.ckpt"
+    if last_ckpt.exists():
+        try:
+            state = torch.load(last_ckpt, map_location="cpu", weights_only=False)
+            callbacks = state.get("callbacks", {})
+            for callback_state in callbacks.values():
+                if isinstance(callback_state, dict) and "best_model_path" in callback_state:
+                    best_path = callback_state.get("best_model_path")
+                    if best_path:
+                        best_path = Path(best_path)
+                        if best_path.exists():
+                            return best_path
+                        candidate = ckpt_dir / best_path.name
+                        if candidate.exists():
+                            return candidate
+        except Exception:
+            pass
+
+    ckpts = sorted(ckpt_dir.glob("epoch=*.ckpt"), key=lambda p: p.stat().st_mtime)
+    if not ckpts:
+        raise FileNotFoundError(f"No epoch checkpoints found in: {ckpt_dir}")
+    return ckpts[-1]
 
 
 def parse_args():
@@ -78,6 +103,18 @@ def parse_args():
         required=True,
         help="Which dataset the model was trained on",
     )
+    parser.add_argument(
+        "--max_val_samples",
+        type=int,
+        default=None,
+        help="Optional cap for number of validation recordings to evaluate.",
+    )
+    parser.add_argument(
+        "--max_test_samples",
+        type=int,
+        default=None,
+        help="Optional cap for number of test recordings to evaluate.",
+    )
 
     return parser.parse_args()
 
@@ -95,7 +132,7 @@ def setup(args: argparse.Namespace):
         batch_size=1,
         dataset_kwargs=ds_kwargs,
         sample_mode="sequence",
-        num_workers=os.cpu_count()//2
+        num_workers=max(1, (os.cpu_count() or 1) // 2),
     )
 
     dm.setup()
@@ -105,7 +142,10 @@ def setup(args: argparse.Namespace):
     TRAIN_DATASET = args.trained_on
 
     path = Path("logs") / TRAIN_DATASET / TASK / FUSION
-    path = sorted(path.glob("version_*"), key=lambda x: x.stat().st_ctime)[-1]
+    versions = sorted(path.glob("version_*"), key=lambda x: x.stat().st_ctime)
+    if not versions:
+        raise FileNotFoundError(f"No model versions found in: {path}")
+    path = versions[-1]
 
     print(f"Loading model: '{FUSION}' for task '{TASK}' from {path}")
 
@@ -114,8 +154,9 @@ def setup(args: argparse.Namespace):
     model_args = dotdict(model_args)
 
     # best checkpoint
-    ckpt = path / "checkpoints"
-    ckpt = sorted(ckpt.glob("epoch=*.ckpt"))[-1]
+    ckpt_dir = path / "checkpoints"
+    ckpt = _resolve_best_checkpoint(ckpt_dir)
+    print(f"Using checkpoint: {ckpt}")
 
     models = {"audio": torch.nn.Identity(), "video": torch.nn.Identity()}
     EMB_DIM = model_args.emb_dim
@@ -135,13 +176,13 @@ def setup(args: argparse.Namespace):
     )
 
     if args.task == "binary":
-        detection_head = ClassifierHead(input_dim=EMB_DIM, num_classes=1, hidden_dim=EMB_DIM // 2, dropout=0.5)
+        detection_head = ClassifierHead(input_dim=EMB_DIM, num_classes=1)
         pass
     elif args.task == "fine-grained":
         assert (
             args.dataset != "SWAN_DF"
         ), "Fine-grained task is not supported for SWAN_DF, as it has only RA-RV and FA-FV classes."
-        detection_head = ClassifierHead(input_dim=EMB_DIM, num_classes=4, hidden_dim=EMB_DIM // 2, dropout=0.5)
+        detection_head = ClassifierHead(input_dim=EMB_DIM, num_classes=4)
 
     pipe = MultiModalAuthPipeline(
         models=models,
@@ -219,8 +260,17 @@ def plot_tsne(embeddings, labels, title, save_path):
     if len(np.unique(labels)) > len(AV_CLASSES):
         print("[warn] Found label outside expected 0-3 range")
 
+    if len(embeddings) < 2:
+        print("[warn] Skipping plot: t-SNE needs at least 2 samples")
+        return
+
+    perplexity = min(30, len(embeddings) - 1)
+    if perplexity < 1:
+        print("[warn] Skipping plot: invalid t-SNE perplexity")
+        return
+
     # Run t-SNE
-    tsne = TSNE(n_components=2, perplexity=30, random_state=42)
+    tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)
     embeddings_2d = tsne.fit_transform(embeddings)
 
     # Plot each class separately
@@ -332,14 +382,38 @@ def plot_av_pred_matrix(av_pred_counts: np.ndarray, title: str, save_path: Path)
 
 def calculate_eer(labels, probs):
     """Calculate Equal Error Rate (EER) and optimal threshold"""
+    labels = np.asarray(labels)
+    probs = np.asarray(probs)
+
+    if np.unique(labels).size < 2:
+        print("[warn] EER undefined for single-class labels; using fallback threshold=0.50")
+        return float("nan"), 0.5
+
     fpr, tpr, thresholds = roc_curve(labels, probs)
+    if len(thresholds) == 0:
+        print("[warn] Empty ROC thresholds; using fallback threshold=0.50")
+        return float("nan"), 0.5
+
     fnr = 1 - tpr
     eer_threshold = thresholds[np.nanargmin(np.absolute(fnr - fpr))]
     eer = fpr[np.nanargmin(np.absolute(fnr - fpr))]
     return eer, eer_threshold
 
 
-def _eval_split(loader, pipe, metrics, split, task, save_path):
+def best_f1_threshold(labels, probs, num_steps: int = 1001):
+    thresholds = np.linspace(0.0, 1.0, num_steps)
+    best_thr = 0.5
+    best_f1 = -1.0
+    for thr in thresholds:
+        preds = (probs >= thr).astype(np.int64)
+        f1 = f1_score(labels, preds, zero_division=0)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_thr = float(thr)
+    return best_f1, best_thr
+
+
+def _eval_split(loader, pipe, metrics, split, task, save_path, max_samples: int | None = None):
     probs, gts = [], []
     audio_emb, video_emb, fused_emb = [], [], []
     av_labels = []
@@ -352,7 +426,10 @@ def _eval_split(loader, pipe, metrics, split, task, save_path):
         else ConfusionMatrix(task="multiclass", num_classes=4).to(device)
     )
 
-    for sample in tqdm(loader, desc=split):
+    for idx, sample in enumerate(tqdm(loader, desc=split)):
+        if max_samples is not None and idx >= max_samples:
+            break
+
         sample["video"] = sample["video"].squeeze(0).to(device)
         sample["audio"] = sample["audio"].squeeze(0).to(device)
 
@@ -371,7 +448,8 @@ def _eval_split(loader, pipe, metrics, split, task, save_path):
                 win_prob = torch.softmax(logits, dim=-1)
                 clip_prob = win_prob.mean(0)
 
-            gt = sample["metadata"]["label"][0].to(device)
+            gt_key = "label" if task == "binary" else "av"
+            gt = sample["metadata"][gt_key][0].to(device)
 
             probs.append(clip_prob)
             gts.append(gt)
@@ -382,6 +460,11 @@ def _eval_split(loader, pipe, metrics, split, task, save_path):
                 fused_emb.append(out["embedding"].mean(0).cpu().numpy())
                 av_labels.append(sample["metadata"]["av"].item())
 
+    if len(probs) == 0:
+        raise RuntimeError(
+            f"No samples evaluated for split='{split}'. Check loader/data or increase max_samples."
+        )
+
     probs_tensor = torch.stack(probs).to(device)
     gts_tensor = torch.stack(gts).to(device)
 
@@ -389,10 +472,16 @@ def _eval_split(loader, pipe, metrics, split, task, save_path):
         if split == "val":
             val_probs_np = probs_tensor.cpu().numpy()
             val_gts_np = gts_tensor.cpu().numpy()
-            eer, best_thr = calculate_eer(val_gts_np, val_probs_np)
+            eer, eer_thr = calculate_eer(val_gts_np, val_probs_np)
+            best_f1, f1_thr = best_f1_threshold(val_gts_np, val_probs_np)
+            best_thr = eer_thr
             _eval_split.best_thr = best_thr
-            print(f"[VAL] EER={eer:.4f} @ thr={best_thr:.2f}")
+            print(f"[VAL] EER={eer:.4f} @ thr_eer={eer_thr:.2f}")
+            print(f"[VAL] Best F1={best_f1:.4f} @ thr_f1={f1_thr:.2f}")
+            print(f"[VAL] Selected threshold (EER calibration)={best_thr:.2f}")
             _eval_split.val_eer = eer
+            _eval_split.val_best_f1 = best_f1
+            _eval_split.val_threshold = float(best_thr)
         else:
             best_thr = getattr(_eval_split, "best_thr", 0.5)
             print(f"[TEST] Using threshold from val: {best_thr:.2f}")
@@ -406,28 +495,28 @@ def _eval_split(loader, pipe, metrics, split, task, save_path):
     else:
         preds = probs_tensor.argmax(dim=1)
         
-    av_array  = np.array(av_labels)
-    preds_np  = preds.cpu().numpy()
-    gts_np    = gts_tensor.cpu().numpy()
+    if task == "binary":
+        av_array = np.array(av_labels)
+        preds_np = preds.cpu().numpy()
 
-    av_pred_counts = np.zeros((4, 2), dtype=int)
+        av_pred_counts = np.zeros((4, 2), dtype=int)
 
-    for i in range(len(preds_np)):
-        av_idx = int(av_array[i])
-        pred_label = int(preds_np[i])
-        av_pred_counts[av_idx, pred_label] += 1
+        for i in range(len(preds_np)):
+            av_idx = int(av_array[i])
+            pred_label = int(preds_np[i])
+            av_pred_counts[av_idx, pred_label] += 1
 
-    plot_av_pred_matrix(
-        av_pred_counts,
-        f"{split.title()} set – AV vs. Binary‐Prediction",
-        save_path / f"{split}_av_vs_pred_matrix.png",
-    )
+        plot_av_pred_matrix(
+            av_pred_counts,
+            f"{split.title()} set – AV vs. Binary‐Prediction",
+            save_path / f"{split}_av_vs_pred_matrix.png",
+        )
 
-    print(f"[{split.upper()}] AV→Prediction breakdown:")
-    for idx, cls_name in enumerate(AV_CLASSES):
-        neg_count = av_pred_counts[idx, 0]
-        pos_count = av_pred_counts[idx, 1]
-        print(f"    {cls_name}:  Neg={neg_count}, Pos={pos_count}")
+        print(f"[{split.upper()}] AV→Prediction breakdown:")
+        for idx, cls_name in enumerate(AV_CLASSES):
+            neg_count = av_pred_counts[idx, 0]
+            pos_count = av_pred_counts[idx, 1]
+            print(f"    {cls_name}:  Neg={neg_count}, Pos={pos_count}")
 
     for p, y_hat, y in zip(probs_tensor, preds, gts_tensor):
         _update_metrics(metrics, p, y_hat, y, split)
@@ -458,7 +547,7 @@ def _eval_split(loader, pipe, metrics, split, task, save_path):
         save_path / f"{split}_fused.png",
     )
     
-    mean_inf_time_ms = (total_inference_time / n_samples) * 1000
+    mean_inf_time_ms = (total_inference_time / max(n_samples, 1)) * 1000
     print(f"[{split.upper()}] Mean Inference Time: {mean_inf_time_ms:.2f} ms/sample")
 
     # Save to object for metrics output later
@@ -481,6 +570,12 @@ def save_metrics(metrics, path):
         else:
             metrics['val'] = {'eer': _eval_split.val_eer}
 
+    if hasattr(_eval_split, 'val_best_f1'):
+        metrics.setdefault('val', {})['best_f1'] = _eval_split.val_best_f1
+
+    if hasattr(_eval_split, 'val_threshold'):
+        metrics.setdefault('val', {})['threshold'] = _eval_split.val_threshold
+
     if hasattr(_eval_split, 'test_eer'):
         if 'test' in metrics:
             metrics['test']['eer'] = _eval_split.test_eer
@@ -501,10 +596,10 @@ def save_metrics(metrics, path):
         json.dump(metrics, f, indent=4)
 
 
-def evaluate(dm, pipe, metrics, save_path):
+def evaluate(dm, pipe, metrics, save_path, task, max_val_samples=None, max_test_samples=None):
 
     val_loader = dm.val_dataloader()
-    _eval_split(val_loader, pipe, metrics, "val", args.task, save_path)
+    _eval_split(val_loader, pipe, metrics, "val", task, save_path, max_samples=max_val_samples)
     print("Validation Set Metrics")
     for k, v in metrics["val"].items():
         print(f"{k}: {v.compute().item(): .3f}")
@@ -514,7 +609,7 @@ def evaluate(dm, pipe, metrics, save_path):
     print("\n" + "-" * 50 + "\n")
 
     test_loader = dm.test_dataloader()
-    _eval_split(test_loader, pipe, metrics, "test", args.task, save_path)
+    _eval_split(test_loader, pipe, metrics, "test", task, save_path, max_samples=max_test_samples)
     print("Test Set Metrics")
     for k, v in metrics["test"].items():
         print(f"{k}: {v.compute().item(): .3f}")
@@ -532,6 +627,14 @@ if __name__ == "__main__":
 
     metrics = get_metrics(args.task)
 
-    evaluate(dm, pipe, metrics, save_path)
+    evaluate(
+        dm,
+        pipe,
+        metrics,
+        save_path,
+        args.task,
+        max_val_samples=args.max_val_samples,
+        max_test_samples=args.max_test_samples,
+    )
 
     save_metrics(metrics, save_path / "metrics.json")

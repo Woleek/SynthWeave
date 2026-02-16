@@ -50,21 +50,9 @@ from src.adv_training import (
 from src.visualization import plot_tsne_figure
 
 class ClassifierHead(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 256, dropout: float = 0.4, num_classes: int = 1):
+    def __init__(self, input_dim: int, num_classes: int = 1):
         super().__init__()
-        self.classifier = nn.Sequential(
-            # nn.Linear(input_dim, input_dim),
-            # nn.LayerNorm(input_dim),
-            # nn.LeakyReLU(),
-            # nn.Dropout(dropout),
-            # nn.Linear(input_dim, hidden_dim),
-            # nn.LayerNorm(hidden_dim),
-            # nn.LeakyReLU(),
-            # nn.Dropout(dropout),
-            nn.Linear(input_dim, num_classes),
-        )
-        
-        self.classifier
+        self.classifier = nn.Linear(input_dim, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(x)
@@ -167,7 +155,7 @@ class DeepfakeDetector(pl.LightningModule):
         # Deepfake binary loss
         if self.task == "binary":
             logits = out["logits"].squeeze(-1)  # shape (B,)
-            cls_loss = F.binary_cross_entropy_with_logits(logits, y.float().clamp(0.05, 0.95))
+            cls_loss = F.binary_cross_entropy_with_logits(logits, y.float().clamp(0.025, 0.975))
         else:
             logits = out["logits"] # shape (B, 4)
             cls_loss = F.cross_entropy(logits, y.long(), label_smoothing=0.05)
@@ -304,28 +292,29 @@ class DeepfakeDetector(pl.LightningModule):
         return total_loss
     
     def on_train_start(self):
-        
+        if self.train_strategy != "FRADE":
+            return
+
         # Only initialize once
-        if hasattr(self, "_centers_initialized"):
-            if self._centers_initialized:
-                return
+        if getattr(self, "_centers_initialized", False):
+            return
 
-            # Grab one batch
-            train_loader = self.trainer.datamodule.train_dataloader()
-            batch = next(iter(train_loader))
+        # Grab one batch
+        train_loader = self.trainer.datamodule.train_dataloader()
+        batch = next(iter(train_loader))
 
-            # Move all tensor‐fields of batch to the trainer’s device
-            batch = self.transfer_batch_to_device(batch, self.device, 0)
+        # Move all tensor‐fields of batch to the trainer’s device
+        batch = self.transfer_batch_to_device(batch, self.device, 0)
 
-            # Forward pass through pipeline to get embeddings
-            outs = self.pipeline(batch)
-            cls_emb = outs["embedding"]       # shape (B, D), on GPU
-            labels  = self._get_labels(batch) # shape (B,), on GPU
+        # Forward pass through pipeline to get embeddings
+        outs = self.pipeline(batch)
+        cls_emb = outs["embedding"]       # shape (B, D), on GPU
+        labels  = self._get_labels(batch) # shape (B,), on GPU
 
-            # Initialize centers via K-Means on those embeddings
-            self.ccl.initialize_centers_from(cls_emb, labels, device=self.device)
+        # Initialize centers via K-Means on those embeddings
+        self.ccl.initialize_centers_from(cls_emb, labels, device=self.device)
 
-            self._centers_initialized = True
+        self._centers_initialized = True
         
     def _init_identity_buffers(self):
         splits = ("train", "val", "test")
@@ -734,7 +723,7 @@ def main(args: argparse.Namespace):
         clip_to=args.clip_to,  # 'min', int
         clip_selector=args.clip_selector,  # 'first', 'random'
         balance_classes=(args.dataset == "SWAN_DF"),
-        num_workers=os.cpu_count()//2,
+        num_workers=max(1, (os.cpu_count() or 1) // 2),
         encode_ids=False,
         drop_last_batch=True,
     )

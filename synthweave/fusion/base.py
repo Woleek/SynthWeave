@@ -67,6 +67,7 @@ class BaseFusion(nn.Module):
         self.modalities = modality_keys
         self.bias = bias
         self.dropout_p = dropout_p
+        self.normalize = normalize
 
         # Set input dimensions
         if input_dims is None:
@@ -89,12 +90,8 @@ class BaseFusion(nn.Module):
             # Set projection dim
             if hidden_proj_dim is not None:
                 hidden_proj_dim = [hidden_proj_dim for _ in modality_keys]
-            elif self.input_dims and all(
-                    dim is not None for dim in input_dims.values()
-                ):
-                hidden_proj_dim = [dim // 2 for dim in input_dims.values()]
             else:
-                hidden_proj_dim = [out_proj_dim // 2 for _ in modality_keys]
+                hidden_proj_dim = [out_proj_dim for _ in modality_keys]
 
             self.projection = nn.ModuleDict(
                 {
@@ -107,7 +104,7 @@ class BaseFusion(nn.Module):
                                         (
                                             ProjectionMLP(
                                                 input_dim,
-                                                input_dim,
+                                                hidden_proj_dim[idx],
                                                 out_proj_dim,
                                                 bias=True,
                                                 dropout=dropout_p,
@@ -129,10 +126,22 @@ class BaseFusion(nn.Module):
                     for idx, (mod, input_dim) in enumerate(self.input_dims.items())
                 }
             )
+
+            if self.normalize:
+                self.projection_norm = nn.ModuleDict(
+                    {mod: L2NormalizationLayer(dim=-1) for mod in modality_keys}
+                )
+            else:
+                self.projection_norm = nn.ModuleDict(
+                    {mod: nn.Identity() for mod in modality_keys}
+                )
         else:
             self.proj_dim = None
 
             self.projection = nn.ModuleDict(
+                {mod: nn.Identity() for mod in modality_keys}
+            )
+            self.projection_norm = nn.ModuleDict(
                 {mod: nn.Identity() for mod in modality_keys}
             )
 
@@ -185,11 +194,14 @@ class BaseFusion(nn.Module):
                 B, T, E = embed.shape
                 embed = embed.reshape(B * T, E)  # Flatten
                 embed = self.projection[mod](embed)  # Project
+                embed = self.projection_norm[mod](embed)
                 embed = embed.reshape(B, T, -1)  # Reshape back
                 proj_embeddings[mod] = embed
 
             else:  # (B, E)
-                proj_embeddings[mod] = self.projection[mod](embed)
+                proj_embeddings[mod] = self.projection_norm[mod](
+                    self.projection[mod](embed)
+                )
 
         # Perform fusion
         fused_embedding = self._forward(proj_embeddings)

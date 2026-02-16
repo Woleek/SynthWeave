@@ -209,7 +209,7 @@ class QualityAdaFace(nn.Module):
         self.input_layer = original_model.model.input_layer
         self.body = original_model.model.body
         self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Linear(512, 1).cuda()
+        self.fc = nn.Linear(512, 1)
 
         ckpt_path = os.path.join(path, "adaface_sdd_fiqa_mod.pth")
         checkpoint = torch.load(ckpt_path)
@@ -709,21 +709,9 @@ class AudioPreprocessor:
 # ====================================
 
 class ClassifierHead(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 256, dropout: float = 0.4, num_classes: int = 1):
+    def __init__(self, input_dim: int, num_classes: int = 1):
         super().__init__()
-        self.classifier = nn.Sequential(
-            # nn.Linear(input_dim, input_dim),
-            # nn.LayerNorm(input_dim),
-            # nn.LeakyReLU(),
-            # nn.Dropout(dropout),
-            # nn.Linear(input_dim, hidden_dim),
-            # nn.LayerNorm(hidden_dim),
-            # nn.LeakyReLU(),
-            # nn.Dropout(dropout),
-            nn.Linear(input_dim, num_classes),
-        )
-        
-        self.classifier
+        self.classifier = nn.Linear(input_dim, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(x)
@@ -797,9 +785,10 @@ class MultiModalAuthPipeline(BasePipeline):
             inputs["video"] = inputs["video"][0][valid_pairs]
             inputs["audio"] = inputs["audio"][0][valid_pairs]
         
-        # Ensure correct device
-        for modality in inputs:
-            inputs[modality] = inputs[modality].to(self.device)
+        # Ensure correct device for tensor modalities only
+        for modality in self.feature_extractors.keys():
+            if modality in inputs and torch.is_tensor(inputs[modality]):
+                inputs[modality] = inputs[modality].to(self.device)
 
         # Extract embeddings from each modality
         feats = self.extract_features(inputs)
@@ -808,14 +797,13 @@ class MultiModalAuthPipeline(BasePipeline):
         output['audio'] = feats['audio']
         
         if self.iil_mode == "whitening":
-            # Feature whitening
-            if self.backbones_frozen:
-                with torch.no_grad():
-                    feats['audio'] = self.audio_whitening(feats['audio'])
-                    feats['video'] = self.video_whitening(feats['video'])
-                    
-                    output['audio_w'] = feats['audio']
-                    output['video_w'] = feats['video']
+            # Feature whitening (no_grad not needed: backbones are already frozen,
+            # and whitening's learnable affine params need gradients)
+            feats['audio'] = self.audio_whitening(feats['audio'])
+            feats['video'] = self.video_whitening(feats['video'])
+
+            output['audio_w'] = feats['audio']
+            output['video_w'] = feats['video']
         
         # Project and fuse embeddings into one vector
         fus_out: dict = self.fusion(

@@ -13,7 +13,7 @@ def get_fusion(
     unify_embeds: bool = True,
     hidden_proj_dim: Optional[int] = None,
     out_proj_dim: Optional[int] = None,
-    normalize_proj: bool = True,
+    normalize_proj: bool = False,
     **kwargs,
 ) -> nn.Module:
     """Factory function to create fusion modules based on specified type.

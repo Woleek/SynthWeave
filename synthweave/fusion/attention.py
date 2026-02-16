@@ -227,32 +227,21 @@ class IAFF(BaseFusion):
         Returns:
             torch.Tensor: Fused representation with shape (batch_size, embed_dim)
         """
-        # Project each modality
-        projected = [self.proj[k](embeddings[k]) for k in self.modalities]  # [(B, H), ...]
+        projected = [self.proj[k](embeddings[k]) for k in self.modalities]
+        concat = torch.cat([embeddings[k] for k in self.modalities], dim=1)
+        gate_logits = self.attention_layer(concat)
 
-        # Get attention scores for both modalities from concat(raw)
-        concat = torch.cat([embeddings[k] for k in self.modalities], dim=1)  # (B, D1 + D2)
-        attn_logits = self.attention_layer(concat)  # (B, 2)
-        attn_scores = [self.softmax(attn_logits)[:, i].unsqueeze(1) for i in range(len(self.modalities))]  # (B, 1), (B, 1)
+        proj_stack = torch.stack(projected, dim=1)
+        proj_norm = torch.nn.functional.normalize(proj_stack, dim=-1)
+        sim = torch.matmul(proj_norm, proj_norm.transpose(1, 2))
+        inter_term = sim.mean(dim=-1)
 
-        # For each modality, compute cross-attended projections with both attention scores
-        attended = []
-        for i in range(len(self.modalities)):
-            # Own and cross attention: [a_a, a_v] for both modalities
-            weighted_own = self.dropout(attn_scores[i] * projected[i])
-            weighted_cross = self.dropout(attn_scores[1-i] * projected[i])
-            # Softmax
-            weighted_own = self.softmax(weighted_own)
-            weighted_cross = self.softmax(weighted_cross)
-            # Dropout again
-            weighted_own = self.dropout(weighted_own)
-            weighted_cross = self.dropout(weighted_cross)
-            attended.append(weighted_own + weighted_cross)
-
-        # Sum attended features, final dropout
-        fusion = sum(attended)
-        
-        return fusion
+        attn_weights = self.softmax(gate_logits + inter_term)
+        fusion = sum(
+            attn_weights[:, i].unsqueeze(1) * projected[i]
+            for i in range(len(self.modalities))
+        )
+        return self.dropout(fusion)
 
 
 class CAFF(BaseFusion):
@@ -322,18 +311,20 @@ class CAFF(BaseFusion):
 
         # Learnable weight matrices for each modality pair (i ≠ j)
         self.cross_weights = nn.ParameterDict()
+        self.align_layers = nn.ModuleDict()
         for mi in self.modalities:
             for mj in self.modalities:
                 if mi != mj:
                     self.cross_weights[f"{mi}_{mj}"] = nn.Parameter(
                         torch.randn(self.proj_dim, self.proj_dim)
                     )
+                    self.align_layers[f"{mi}_{mj}"] = nn.Identity()
 
         # Output FC layer after flatten+concat
         self.fc = nn.Linear(self.proj_dim * len(self.modalities), self.output_dim, bias=bias)
         
         # Sotfmax for attention weights
-        self.softmax = nn.Softmax(dim=1)
+        self.softmax = nn.Softmax(dim=-1)
         
         # Dropout layer
         self.dropout = nn.Dropout(dropout)
@@ -350,6 +341,32 @@ class CAFF(BaseFusion):
         Returns:
             torch.Tensor: Fused representation with shape (batch_size, embed_dim)
         """
+        if all(v.dim() == 2 for v in embeddings.values()):
+            processed = {}
+
+            for mi in self.modalities:
+                xi = embeddings[mi]  # (B, D)
+                attended = []
+                for mj in self.modalities:
+                    if mi == mj:
+                        continue
+                    xj = embeddings[mj]  # (B, D)
+                    W = self.cross_weights[f"{mi}_{mj}"]  # (D, D)
+
+                    # Per-feature cross-gating attention
+                    xiW = torch.matmul(xi, W)  # (B, D)
+                    corr = xiW * xj  # (B, D)
+                    gate = torch.sigmoid(corr)
+                    xj_att = gate * xj
+
+                    attended.append(torch.tanh(xi + xj_att))
+
+                processed[mi] = torch.stack(attended, dim=0).mean(dim=0)  # (B, D)
+
+            fusion = torch.cat([processed[k] for k in self.modalities], dim=1)
+            fusion = self.dropout(fusion)
+            return self.fc(fusion)
+
         # embeddings: dict {modality: (B, D) or (B, K, D)}
         processed = {}
 
@@ -377,10 +394,8 @@ class CAFF(BaseFusion):
                 attn = self.softmax(C)  # (B, K, K)
                 # Attend to xj: (B, K, K) x (B, K, Dj) --> (B, K, Dj)
                 xj_att = torch.matmul(attn, xj)  # (B, K, Dj)
-                # If xi and xj have different dims, project xj_att to xi dim for skip connection
                 if xj_att.shape[-1] != xi.shape[-1]:
-                    # Project xj_att to Di
-                    xj_att = nn.Linear(xj_att.shape[-1], xi.shape[-1]).to(xj_att.device)(xj_att)
+                    xj_att = self.align_layers[f"{mi}_{mj}"](xj_att)
                 # Skip connection + tanh
                 attended.append(torch.tanh(xi + xj_att))
             # Aggregate attended versions (e.g., average)

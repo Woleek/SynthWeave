@@ -94,10 +94,13 @@ class BasePipeline(nn.Module):
         if self.processors is not None:
             # for modality, processor in self.processors.items():
             #     inputs[modality] = processor(*inputs[modality])
-            processed = {
-                modality: processor(*inputs[modality])
-                for modality, processor in self.processors.items()
-            }
+            processed = {}
+            for modality, processor in self.processors.items():
+                modal_input = inputs[modality]
+                if isinstance(modal_input, (list, tuple)):
+                    processed[modality] = processor(*modal_input)
+                else:
+                    processed[modality] = processor(modal_input)
             return processed
         else:
             return inputs
