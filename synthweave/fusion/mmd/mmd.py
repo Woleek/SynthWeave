@@ -73,7 +73,7 @@ class MMD(BaseFusion):
             out_proj_dim,
             normalize_proj,
         )
-        self._num_layers = kwargs.get("num_layers", 3)
+        self._num_layers = kwargs.get("n_layers", kwargs.get("num_layers", 3))
         logger.info(f"MMD initialized with {self._num_layers} layers.")
 
         num_att_heads: int = kwargs.get("num_att_heads", 1)

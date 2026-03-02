@@ -45,6 +45,7 @@ class BaseFusion(nn.Module):
         hidden_proj_dim: Optional[int] = None,
         out_proj_dim: Optional[int] = None,
         normalize: bool = True,
+        per_modality_proj_dims: Optional[Dict[str, int]] = None,
     ):
         """Initialize the base fusion module.
 
@@ -80,18 +81,32 @@ class BaseFusion(nn.Module):
 
         # Set projection layers
         if unify_embeds:
-            if out_proj_dim is None:  # Determine output dimension
-                assert all(
-                    dim is not None for dim in input_dims.values()
-                ), "Either specify output dimension or input dimensions for all modalities."
-                out_proj_dim = min(dim for dim in input_dims.values())
-            self.proj_dim = out_proj_dim
-            
-            # Set projection dim
-            if hidden_proj_dim is not None:
-                hidden_proj_dim = [hidden_proj_dim for _ in modality_keys]
+            # Resolve per-modality output dims
+            if per_modality_proj_dims is not None:
+                # Each modality gets its own out_proj_dim
+                mod_out_dims = {
+                    mod: per_modality_proj_dims.get(mod, out_proj_dim)
+                    for mod in modality_keys
+                }
+                # proj_dim is the uniform fallback (or None); store dict for CFF
+                self.proj_dim = out_proj_dim  # may be None when asymmetric
             else:
-                hidden_proj_dim = [out_proj_dim for _ in modality_keys]
+                if out_proj_dim is None:  # Determine output dimension
+                    assert all(
+                        dim is not None for dim in input_dims.values()
+                    ), "Either specify output dimension or input dimensions for all modalities."
+                    out_proj_dim = min(dim for dim in input_dims.values())
+                mod_out_dims = {mod: out_proj_dim for mod in modality_keys}
+                self.proj_dim = out_proj_dim
+
+            # Store per-modality out dims for downstream use (e.g. CFF FC sizing)
+            self.proj_dims = mod_out_dims
+
+            # Set projection hidden dims
+            if hidden_proj_dim is not None:
+                hidden_proj_dim_list = [hidden_proj_dim for _ in modality_keys]
+            else:
+                hidden_proj_dim_list = [mod_out_dims[mod] for mod in modality_keys]
 
             self.projection = nn.ModuleDict(
                 {
@@ -104,22 +119,22 @@ class BaseFusion(nn.Module):
                                         (
                                             ProjectionMLP(
                                                 input_dim,
-                                                hidden_proj_dim[idx],
-                                                out_proj_dim,
+                                                hidden_proj_dim_list[idx],
+                                                mod_out_dims[mod],
                                                 bias=True,
                                                 dropout=dropout_p,
                                             )
                                             if input_dim is not None
                                             else LazyProjectionMLP(
                                                 input_dim,
-                                                out_proj_dim,
+                                                mod_out_dims[mod],
                                                 bias=True,
                                                 dropout=dropout_p,
                                             )
                                         ),
                                     )
                                 ),
-                                # ("layernorm", nn.LayerNorm(out_proj_dim)),
+                                # ("layernorm", nn.LayerNorm(mod_out_dims[mod])),
                             ]
                         )
                     )
@@ -137,6 +152,7 @@ class BaseFusion(nn.Module):
                 )
         else:
             self.proj_dim = None
+            self.proj_dims = {mod: None for mod in modality_keys}
 
             self.projection = nn.ModuleDict(
                 {mod: nn.Identity() for mod in modality_keys}

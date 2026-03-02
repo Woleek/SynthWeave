@@ -17,7 +17,7 @@ from PIL import Image
 from synthweave.fusion.base import BaseFusion
 from synthweave.pipeline.base import BasePipeline
 from collections import namedtuple
-from .iil import Decomposer, CholeskyWhitening
+from .iil import Decomposer, CholeskyWhitening, SpectralIdentitySuppression, IdentityAdversary
 import torch.nn.functional as F
 
 # ====================================
@@ -301,15 +301,13 @@ class ImagePreprocessor:
         return tensor
 
     def _crop_faces(self, frames: np.ndarray) -> np.ndarray:
-        cropped_faces = []
-        for img in frames:
-            # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(img)
-            img_cropped = self.face_detector(img)
-            if img_cropped is None:
-                continue
-            cropped_faces.append(img_cropped)
-        return torch.stack(cropped_faces) if cropped_faces else None
+        # Batched MTCNN: process all frames in one call instead of per-frame loop
+        imgs = [Image.fromarray(img) for img in frames]
+        batch_crops = self.face_detector(imgs)  # list of Tensors or Nones
+        if batch_crops is None:
+            return None
+        valid = [c for c in batch_crops if c is not None]
+        return torch.stack(valid) if valid else None
 
 
     def _check_frontal_face(self, image):
@@ -728,13 +726,19 @@ class MultiModalAuthPipeline(BasePipeline):
         detection_head: Optional[nn.Module] = None,
         processors: Optional[Mapping[str, Callable[..., torch.Tensor]]] = None,
         freeze_backbone: bool = True,
-        iil_mode: Literal["none", "crossdf", "friday", "whitening"] = "whitening",
+        iil_mode: Literal["none", "crossdf", "friday", "whitening", "sis", "pfaid"] = "whitening",
+        sis_k: int = 10,
+        sis_strength: float = 0.5,
+        pfaid_num_ids: int = 156,
+        pfaid_beta: float = 1.0,
+        modality_branches: bool = False,
+        temporal_agg: Optional[nn.Module] = None,
         device = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         super(MultiModalAuthPipeline, self).__init__(
             models, fusion, detection_head, processors, freeze_backbone
         )
-        
+
         self.device = device
         
         self.iil_mode = iil_mode
@@ -749,7 +753,7 @@ class MultiModalAuthPipeline(BasePipeline):
             
         elif self.iil_mode == "whitening":
             self.audio_whitening = CholeskyWhitening(
-                audio_dim, 
+                audio_dim,
                 mode='ZCA',
                 eps=1e-8,  # Slightly higher for more aggressive decorrelation
                 track_running_stats=True,
@@ -757,15 +761,45 @@ class MultiModalAuthPipeline(BasePipeline):
             )
             self.video_whitening = CholeskyWhitening(
                 video_dim,
-                mode='ZCA', 
+                mode='ZCA',
                 eps=1e-8,
                 track_running_stats=True,
                 momentum=0.05
             )
-        
+
+        elif self.iil_mode == "sis":
+            self.audio_sis = SpectralIdentitySuppression(
+                audio_dim, k=sis_k, strength=sis_strength,
+                momentum=0.05, eps=1e-8, affine=True,
+            )
+            self.video_sis = SpectralIdentitySuppression(
+                video_dim, k=sis_k, strength=sis_strength,
+                momentum=0.05, eps=1e-8, affine=True,
+            )
+
+        elif self.iil_mode == "pfaid":
+            self.identity_adversary = IdentityAdversary(
+                embed_dim=out_dim,
+                num_ids=pfaid_num_ids,
+                hidden_dim=256,
+                beta=pfaid_beta,
+            )
+
         self.fusion_reg = nn.LayerNorm(out_dim)
         self.relu = nn.LeakyReLU(inplace=True)
         self.dropout = nn.Dropout(p=self.fusion.dropout_p)
+
+        # Modality-branch gating (Task 5)
+        self.modality_branches = modality_branches
+        if self.modality_branches:
+            audio_proj_dim = self.fusion.proj_dims.get("audio", 256)
+            video_proj_dim = self.fusion.proj_dims.get("video", 256)
+            self.audio_classifier = nn.Linear(audio_proj_dim, 1)
+            self.video_classifier = nn.Linear(video_proj_dim, 1)
+            self.gate = nn.Linear(out_dim, 3)
+
+        # Temporal aggregation (Task 4 Approach B: end-to-end trained)
+        self.temporal_agg = temporal_agg
 
     def forward(self, inputs: Dict[str, Any]) -> torch.Tensor:
         output = {}
@@ -784,6 +818,8 @@ class MultiModalAuthPipeline(BasePipeline):
             # Filter inputs based on valid masks
             inputs["video"] = inputs["video"][0][valid_pairs]
             inputs["audio"] = inputs["audio"][0][valid_pairs]
+            if "_identity_ids" in inputs:
+                inputs["_identity_ids"] = inputs["_identity_ids"][valid_pairs]
         
         # Ensure correct device for tensor modalities only
         for modality in self.feature_extractors.keys():
@@ -792,10 +828,40 @@ class MultiModalAuthPipeline(BasePipeline):
 
         # Extract embeddings from each modality
         feats = self.extract_features(inputs)
-        
+
+        # Detect sequence mode: (B, W, D) inputs vs window mode (B, D)
+        _first_feat = next(iter(feats.values()))
+        seq_mode = _first_feat.dim() == 3
+        if seq_mode:
+            B, W = _first_feat.shape[:2]
+
+            # Get real sequence lengths; fall back to W (no padding) for inference
+            meta = inputs.get("metadata", {})
+            if isinstance(meta, dict) and "length" in meta:
+                _seq_lengths = meta["length"].to(_first_feat.device)  # (B,)
+            else:
+                _seq_lengths = torch.full(
+                    (B,), W, device=_first_feat.device, dtype=torch.long
+                )
+
+            # Boolean mask: True = real window, False = padding
+            _seq_mask = (
+                torch.arange(W, device=_first_feat.device).unsqueeze(0)
+                < _seq_lengths.unsqueeze(1)
+            )  # (B, W)
+
+            # Extract only non-padding positions so whitening/fusion see clean data
+            for mod in list(feats.keys()):
+                feats[mod] = feats[mod][_seq_mask]  # (N_valid, D)
+
+            # Identity IDs: expand per-clip to per-valid-window
+            if "_identity_ids" in inputs and inputs["_identity_ids"].dim() == 1:
+                _ids_expanded = inputs["_identity_ids"].unsqueeze(1).expand(B, W)
+                inputs["_identity_ids"] = _ids_expanded[_seq_mask]  # (N_valid,)
+
         output['video'] = feats['video']
         output['audio'] = feats['audio']
-        
+
         if self.iil_mode == "whitening":
             # Feature whitening (no_grad not needed: backbones are already frozen,
             # and whitening's learnable affine params need gradients)
@@ -804,28 +870,78 @@ class MultiModalAuthPipeline(BasePipeline):
 
             output['audio_w'] = feats['audio']
             output['video_w'] = feats['video']
-        
+
+        elif self.iil_mode == "sis":
+            id_labels = inputs.get("_identity_ids") if self.training else None
+            feats['audio'] = self.audio_sis(feats['audio'], identity_ids=id_labels)
+            feats['video'] = self.video_sis(feats['video'], identity_ids=id_labels)
+
+            output['audio_sis'] = feats['audio']
+            output['video_sis'] = feats['video']
+
         # Project and fuse embeddings into one vector
         fus_out: dict = self.fusion(
             {modality: feats[modality] for modality in self.fusion.modalities},
             output_projections=True,
         )
-        
+
         output["audio_proj"] = fus_out["audio_proj"]
         output["video_proj"] = fus_out["video_proj"]
-        
+
         z_f = self.dropout(self.relu(self.fusion_reg(fus_out["embedding"])))
-        
+
         if self.iil_mode == "crossdf":
             z_f, z_os, _ = self.decomposer(z_f)
             output["id_embedding"] = z_os
-            
+
+        # Temporal aggregation (Approach B: end-to-end trained)
+        # When in sequence mode, aggregate per-clip window embeddings → single clip vector
+        if seq_mode:
+            D_emb = z_f.shape[-1]
+            # Scatter valid embeddings back into (B, W, D_emb) padded tensor
+            z_full = z_f.new_zeros(B, W, D_emb)
+            z_full[_seq_mask] = z_f  # only real positions are non-zero
+
+            if self.temporal_agg is not None:
+                # Pass only real (non-padded) windows to each aggregator call
+                z_f = torch.stack([
+                    self.temporal_agg(z_full[i, :_seq_lengths[i]])
+                    if _seq_lengths[i] > 1
+                    else z_full[i, 0]  # single window: nothing to aggregate
+                    for i in range(B)
+                ])  # (B, D_emb)
+            else:
+                # Masked mean pooling: sum real positions, divide by true length
+                z_f = z_full.sum(dim=1) / _seq_lengths.unsqueeze(1).float()  # (B, D_emb)
+
         output["embedding"] = z_f
-        
+
         # Pass the fused embeddings to the head
         head_out = self.downstream_pass(output)
-        
+
         output["logits"] = head_out["logits"]
+
+        # PFAID: adversarial identity prediction during training only
+        if self.iil_mode == "pfaid" and self.training:
+            output["pfaid_logits"] = self.identity_adversary(z_f)
+
+        # Modality branches: gated combination of 3 classifiers
+        # Not used in sequence/temporal mode (audio_proj/video_proj are still per-window)
+        if self.modality_branches and not seq_mode:
+            audio_logit = self.audio_classifier(output["audio_proj"])  # (W, 1)
+            video_logit = self.video_classifier(output["video_proj"])  # (W, 1)
+            combined_logit = head_out["logits"]  # (W, 1)
+            gates = F.softmax(self.gate(z_f), dim=-1)  # (W, 3)
+            final_logit = (
+                gates[:, 0:1] * combined_logit
+                + gates[:, 1:2] * audio_logit
+                + gates[:, 2:3] * video_logit
+            )
+            output["logits"] = final_logit
+            output["audio_logit"] = audio_logit
+            output["video_logit"] = video_logit
+            output["gates"] = gates  # (W, 3): [wc, wa, wv]
+
         return output
 
     def verify(self, inputs: Dict[str, Any]) -> torch.Tensor:

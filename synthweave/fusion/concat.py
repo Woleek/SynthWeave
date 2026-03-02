@@ -70,7 +70,8 @@ class CFF(BaseFusion):
         )
 
         # Fully connected layer to process concatenated features
-        self.fc = nn.Linear(self.proj_dim * len(self.modalities), self.output_dim, bias=bias)
+        total_concat_dim = sum(self.proj_dims[mod] for mod in self.modalities)
+        self.fc = nn.Linear(total_concat_dim, self.output_dim, bias=bias)
         self.dropout = nn.Dropout(dropout_p)
         self.relu = nn.ReLU()
 

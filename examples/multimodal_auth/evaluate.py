@@ -1,12 +1,13 @@
 import argparse
 import os
-from typing import Dict
+from typing import Dict, Optional
 import torch
 from src.pipe import (
     MultiModalAuthPipeline,
 )
 from synthweave.utils.datasets import get_datamodule
 from synthweave.utils.fusion import get_fusion
+from src.temporal import get_temporal_aggregator
 from pathlib import Path
 import json
 from tqdm.auto import tqdm
@@ -87,21 +88,28 @@ def parse_args():
     parser.add_argument(
         "--fusion",
         type=str,
-        required=True,
+        default=None,
         help="Fusion method to evaluate.",
     )
     parser.add_argument(
         "--task",
         type=str,
-        required=True,
+        default="binary",
         choices=["binary", "fine-grained"],
         help="Task type.",
     )
     parser.add_argument(
         "--trained_on",
         choices=["DeepSpeak_v1_1", "SWAN_DF"],
-        required=True,
+        default=None,
         help="Which dataset the model was trained on",
+    )
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default=None,
+        help="Path to the Lightning log directory (contains args.json and checkpoints/). "
+             "Alternative to --trained_on/--fusion/--task.",
     )
     parser.add_argument(
         "--max_val_samples",
@@ -114,6 +122,15 @@ def parse_args():
         type=int,
         default=None,
         help="Optional cap for number of test recordings to evaluate.",
+    )
+    parser.add_argument(
+        "--temporal_agg",
+        type=str,
+        default=None,
+        choices=["mean", "attention", "conv1d", "gru", "transformer"],
+        help="Temporal aggregation strategy for clip-level prediction. "
+             "'mean' (default) averages per-window probabilities. "
+             "Other options aggregate per-window embeddings then classify.",
     )
 
     return parser.parse_args()
@@ -137,21 +154,32 @@ def setup(args: argparse.Namespace):
 
     dm.setup()
 
-    FUSION = args.fusion
-    TASK = args.task
-    TRAIN_DATASET = args.trained_on
+    # Resolve log directory: either --log_dir directly, or from --trained_on/--fusion/--task
+    if args.log_dir:
+        path = Path(args.log_dir)
+        if not path.exists():
+            raise FileNotFoundError(f"Log directory not found: {path}")
+    else:
+        if not args.trained_on or not args.fusion:
+            raise ValueError("Must specify either --log_dir or both --trained_on and --fusion")
+        FUSION = args.fusion
+        TASK = args.task
+        TRAIN_DATASET = args.trained_on
 
-    path = Path("logs") / TRAIN_DATASET / TASK / FUSION
-    versions = sorted(path.glob("version_*"), key=lambda x: x.stat().st_ctime)
-    if not versions:
-        raise FileNotFoundError(f"No model versions found in: {path}")
-    path = versions[-1]
-
-    print(f"Loading model: '{FUSION}' for task '{TASK}' from {path}")
+        path = Path("logs") / TRAIN_DATASET / TASK / FUSION
+        versions = sorted(path.glob("version_*"), key=lambda x: x.stat().st_ctime)
+        if not versions:
+            raise FileNotFoundError(f"No model versions found in: {path}")
+        path = versions[-1]
 
     # config
     model_args = json.loads((path / "args.json").read_text())
     model_args = dotdict(model_args)
+
+    FUSION = model_args.get("fusion", args.fusion)
+    TASK = model_args.get("task", args.task)
+
+    print(f"Loading model: '{FUSION}' for task '{TASK}' from {path}")
 
     # best checkpoint
     ckpt_dir = path / "checkpoints"
@@ -160,6 +188,11 @@ def setup(args: argparse.Namespace):
 
     models = {"audio": torch.nn.Identity(), "video": torch.nn.Identity()}
     EMB_DIM = model_args.emb_dim
+
+    # Per-modality projection dims (Task 3 support)
+    video_proj_dim = model_args.get("video_proj_dim", None) or model_args.proj_dim
+    audio_proj_dim = model_args.get("audio_proj_dim", None) or model_args.proj_dim
+    per_modality_proj_dims = {"video": video_proj_dim, "audio": audio_proj_dim}
 
     fusion = get_fusion(
         fusion_name=FUSION,
@@ -170,25 +203,39 @@ def setup(args: argparse.Namespace):
             "audio": 192,
         },
         out_proj_dim=model_args.proj_dim,
+        per_modality_proj_dims=per_modality_proj_dims,
         num_att_heads=2,
         n_layers=2,
         dropout=model_args.dropout,
     )
 
-    if args.task == "binary":
+    if TASK == "binary":
         detection_head = ClassifierHead(input_dim=EMB_DIM, num_classes=1)
-        pass
-    elif args.task == "fine-grained":
+    elif TASK == "fine-grained":
         assert (
             args.dataset != "SWAN_DF"
         ), "Fine-grained task is not supported for SWAN_DF, as it has only RA-RV and FA-FV classes."
         detection_head = ClassifierHead(input_dim=EMB_DIM, num_classes=4)
+
+    # Read IIL configuration from saved training args
+    iil_mode = model_args.get("iil_mode", "none")
+    sis_k = model_args.get("sis_k", 10)
+    sis_strength = model_args.get("sis_strength", 0.5)
+    pfaid_beta = model_args.get("pfaid_beta", 1.0)
+    modality_branches = model_args.get("modality_branches", False)
+    print(f"IIL mode: {iil_mode}" + (f" (k={sis_k}, strength={sis_strength})" if iil_mode == "sis" else ""))
 
     pipe = MultiModalAuthPipeline(
         models=models,
         fusion=fusion,
         detection_head=detection_head,
         freeze_backbone=True,
+        iil_mode=iil_mode,
+        sis_k=sis_k,
+        sis_strength=sis_strength,
+        pfaid_num_ids=156,
+        pfaid_beta=pfaid_beta,
+        modality_branches=modality_branches,
     )
 
     state_dict = torch.load(ckpt, map_location="cpu", weights_only=False)["state_dict"]
@@ -198,7 +245,7 @@ def setup(args: argparse.Namespace):
     pipe = pipe.to(device)
     pipe.eval()
 
-    return dm, pipe, path
+    return dm, pipe, path, TASK, iil_mode
 
 
 def get_metrics(task):
@@ -413,7 +460,8 @@ def best_f1_threshold(labels, probs, num_steps: int = 1001):
     return best_f1, best_thr
 
 
-def _eval_split(loader, pipe, metrics, split, task, save_path, max_samples: int | None = None):
+def _eval_split(loader, pipe, metrics, split, task, save_path,
+                max_samples: int | None = None, temporal_agg=None):
     probs, gts = [], []
     audio_emb, video_emb, fused_emb = [], [], []
     av_labels = []
@@ -442,8 +490,14 @@ def _eval_split(loader, pipe, metrics, split, task, save_path, max_samples: int 
             logits = out["logits"].squeeze(-1)
 
             if task == "binary":
-                win_prob = torch.sigmoid(logits)
-                clip_prob = win_prob.mean()
+                if temporal_agg is not None and "embedding" in out:
+                    emb = out["embedding"]                          # (W, D)
+                    z_agg = temporal_agg(emb)                      # (D,)
+                    agg_logit = pipe.head(z_agg.unsqueeze(0))      # (1, 1)
+                    clip_prob = torch.sigmoid(agg_logit).squeeze()
+                else:
+                    win_prob = torch.sigmoid(logits)
+                    clip_prob = win_prob.mean()
             else:
                 win_prob = torch.softmax(logits, dim=-1)
                 clip_prob = win_prob.mean(0)
@@ -596,10 +650,12 @@ def save_metrics(metrics, path):
         json.dump(metrics, f, indent=4)
 
 
-def evaluate(dm, pipe, metrics, save_path, task, max_val_samples=None, max_test_samples=None):
+def evaluate(dm, pipe, metrics, save_path, task, max_val_samples=None, max_test_samples=None,
+             temporal_agg=None):
 
     val_loader = dm.val_dataloader()
-    _eval_split(val_loader, pipe, metrics, "val", task, save_path, max_samples=max_val_samples)
+    _eval_split(val_loader, pipe, metrics, "val", task, save_path,
+                max_samples=max_val_samples, temporal_agg=temporal_agg)
     print("Validation Set Metrics")
     for k, v in metrics["val"].items():
         print(f"{k}: {v.compute().item(): .3f}")
@@ -609,7 +665,8 @@ def evaluate(dm, pipe, metrics, save_path, task, max_val_samples=None, max_test_
     print("\n" + "-" * 50 + "\n")
 
     test_loader = dm.test_dataloader()
-    _eval_split(test_loader, pipe, metrics, "test", task, save_path, max_samples=max_test_samples)
+    _eval_split(test_loader, pipe, metrics, "test", task, save_path,
+                max_samples=max_test_samples, temporal_agg=temporal_agg)
     print("Test Set Metrics")
     for k, v in metrics["test"].items():
         print(f"{k}: {v.compute().item(): .3f}")
@@ -619,22 +676,35 @@ def evaluate(dm, pipe, metrics, save_path, task, max_val_samples=None, max_test_
 
 if __name__ == "__main__":
     args = parse_args()
-    dm, pipe, path = setup(args)
+    dm, pipe, path, task, iil_mode = setup(args)
 
-    save_path = path / "results" / args.dataset
+    # Build temporal aggregator (Approach A: inference-only)
+    temporal_agg_module = None
+    agg_tag = args.temporal_agg if args.temporal_agg else "mean"
+    if args.temporal_agg and args.temporal_agg != "mean":
+        from src.pipe import MultiModalAuthPipeline
+        import json as _json
+        _margs = _json.loads((path / "args.json").read_text())
+        _emb_dim = _margs.get("emb_dim", 512)
+        temporal_agg_module = get_temporal_aggregator(args.temporal_agg, _emb_dim).to(device)
+        temporal_agg_module.eval()
+        print(f"[Temporal] Using '{args.temporal_agg}' aggregator (embed_dim={_emb_dim})")
+
+    save_path = path / "results" / args.dataset / iil_mode / f"tagg_{agg_tag}"
     if not save_path.exists():
         save_path.mkdir(parents=True, exist_ok=True)
 
-    metrics = get_metrics(args.task)
+    metrics = get_metrics(task)
 
     evaluate(
         dm,
         pipe,
         metrics,
         save_path,
-        args.task,
+        task,
         max_val_samples=args.max_val_samples,
         max_test_samples=args.max_test_samples,
+        temporal_agg=temporal_agg_module,
     )
 
     save_metrics(metrics, save_path / "metrics.json")

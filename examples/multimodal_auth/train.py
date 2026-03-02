@@ -15,6 +15,7 @@ from src.pipe import (
     AdaFace,
     ReDimNet,
 )
+from src.temporal import get_temporal_aggregator
 import torch.nn as nn
 from sklearn.cluster import KMeans
 from synthweave.utils.datasets import get_datamodule
@@ -39,7 +40,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 from src.iil import (
-    IdentityAttenuationLoss, GradientReversal,
+    IdentityAttenuationLoss, GradientReversal, IdentityAdversary,
     MIDiscriminator, mutual_info_loss, linear_probe_identity, tsne_and_ari
 )
 
@@ -75,8 +76,11 @@ class DeepfakeDetector(pl.LightningModule):
         pipeline: MultiModalAuthPipeline,
         detection_task: Literal["binary", "fine-grained"] = "binary",
         lr: float = 1e-4,
-        iil_mode: Literal["none", "crossdf", "friday", "whitening"] = "none",
+        iil_mode: Literal["none", "crossdf", "friday", "whitening", "sis", "pfaid"] = "none",
         train_strategy: Literal["default", "FRADE", "MRDF_ce", "MRDF_marg", "JSD"] = "default",
+        num_identities: int = 156,
+        lambda_pfaid: float = 1.0,
+        modality_branches: bool = False,
     ):
         super().__init__()
         self.identity_buffer_size: int = 4000   # Max samples to accumulate
@@ -120,12 +124,17 @@ class DeepfakeDetector(pl.LightningModule):
             
         elif self.iil_mode == "friday":
             self.ia_loss   = IdentityAttenuationLoss()
-            
+
             self.lambda_ia  = 10.0          # FRIDAY paper
-            
-            self.id_branch = copy.deepcopy(pipeline) 
-            self.id_branch.head = nn.Linear(embed_dim, 156)  # 156 identities
-                    
+
+            self.id_branch = copy.deepcopy(pipeline)
+            self.id_branch.head = nn.Linear(embed_dim, num_identities)
+
+        elif self.iil_mode == "pfaid":
+            self.lambda_pfaid = lambda_pfaid
+
+        self.modality_branches = modality_branches
+
         # Person ID coders (for adversarial loss)
         self.id_coder = {split: IdCoder() for split in ("train", "val", "test")}
 
@@ -144,10 +153,16 @@ class DeepfakeDetector(pl.LightningModule):
     
     def _step(self, batch, stage, batch_idx):
         bs = batch["video"].size(0)
-        
+
+        # Pre-compute identity IDs (used for IIL and identity leakage)
+        id_t = self.id_coder[stage].encode(batch["metadata"]["id_target"]).to(batch["video"].device)
+
+        # Inject identity IDs for SIS module (needs them during forward)
+        if self.iil_mode == "sis":
+            batch["_identity_ids"] = id_t
+
         out = self(batch)
         y = self._get_labels(batch)
-        id_t = self.id_coder[stage].encode(batch["metadata"]["id_target"]).to(batch["video"].device)
         
         # ========== Losses ==========
         loss_terms = []
@@ -181,7 +196,27 @@ class DeepfakeDetector(pl.LightningModule):
             id_loss = F.cross_entropy(id_outs["logits"], id_t.long())
             self.log(f"{stage}/id_adv_loss", id_loss, prog_bar=False, batch_size=bs)
             loss_terms.append(id_loss * 0.5)
-        
+
+        elif self.iil_mode == "pfaid":
+            if "pfaid_logits" in out:  # only present during training
+                pfaid_id_loss = F.cross_entropy(out["pfaid_logits"], id_t.long())
+                self.log(f"{stage}/pfaid_loss", pfaid_id_loss, batch_size=bs)
+                loss_terms.append(self.lambda_pfaid * pfaid_id_loss)
+
+        # Modality branch auxiliary losses (Task 5)
+        if self.modality_branches and "audio_logit" in out:
+            aud_t = self._get_per_modality_binary_labels(batch, "audio")
+            vid_t = self._get_per_modality_binary_labels(batch, "video")
+            aud_branch_loss = F.binary_cross_entropy_with_logits(
+                out["audio_logit"].squeeze(-1), aud_t.float()
+            )
+            vid_branch_loss = F.binary_cross_entropy_with_logits(
+                out["video_logit"].squeeze(-1), vid_t.float()
+            )
+            branches_loss = 0.5 * (aud_branch_loss + vid_branch_loss)
+            self.log(f"{stage}/branches_loss", branches_loss, batch_size=bs)
+            loss_terms.append(branches_loss)
+
         # Advanced training strategies
         if self.train_strategy == "FRADE":
             # Cross‐modal contrastive loss (FRADE)
@@ -303,8 +338,13 @@ class DeepfakeDetector(pl.LightningModule):
         train_loader = self.trainer.datamodule.train_dataloader()
         batch = next(iter(train_loader))
 
-        # Move all tensor‐fields of batch to the trainer’s device
+        # Move all tensor‐fields of batch to the trainer's device
         batch = self.transfer_batch_to_device(batch, self.device, 0)
+
+        # Inject identity IDs for SIS module (needs them during forward)
+        if self.iil_mode == "sis":
+            id_t = self.id_coder["train"].encode(batch["metadata"]["id_target"]).to(self.device)
+            batch["_identity_ids"] = id_t
 
         # Forward pass through pipeline to get embeddings
         outs = self.pipeline(batch)
@@ -616,7 +656,57 @@ def parse_args():
         "--iil_mode",
         type=str,
         default="none",
-        choices=["none", "crossdf", "friday", "whitening"],
+        choices=["none", "crossdf", "friday", "whitening", "sis", "pfaid"],
+    )
+    parser.add_argument(
+        "--sis_k",
+        type=int,
+        default=10,
+        help="Number of top identity eigenvectors to suppress (SIS mode)",
+    )
+    parser.add_argument(
+        "--sis_strength",
+        type=float,
+        default=0.5,
+        help="Suppression strength alpha in [0,1] (SIS mode)",
+    )
+    parser.add_argument(
+        "--pfaid_lambda",
+        type=float,
+        default=1.0,
+        help="PFAID identity adversary loss weight",
+    )
+    parser.add_argument(
+        "--pfaid_beta",
+        type=float,
+        default=1.0,
+        help="PFAID GRL reversal strength",
+    )
+    parser.add_argument(
+        "--video_proj_dim",
+        type=int,
+        default=None,
+        help="Video projection output dim (default: same as --proj_dim)",
+    )
+    parser.add_argument(
+        "--audio_proj_dim",
+        type=int,
+        default=None,
+        help="Audio projection output dim (default: same as --proj_dim)",
+    )
+    parser.add_argument(
+        "--modality_branches",
+        action="store_true",
+        default=False,
+        help="Enable gated multi-branch modality classifiers",
+    )
+    parser.add_argument(
+        "--temporal_agg",
+        type=str,
+        default=None,
+        choices=["attention", "conv1d", "gru", "transformer"],
+        help="Temporal aggregator type for end-to-end training (Approach B). "
+             "Switches DataLoader to sequence mode and trains aggregator jointly.",
     )
     parser.add_argument(
         "--train_strategy",
@@ -694,7 +784,7 @@ def main(args: argparse.Namespace):
         ds_kwargs = {
             "data_dir": args.data_dir,
             "preprocessed": True,
-            "sample_mode": "single",
+            "sample_mode": "sequence" if args.temporal_agg else "single",
         }
 
         if args.dataset == "SWAN_DF":
@@ -711,14 +801,14 @@ def main(args: argparse.Namespace):
             "video_processor": vid_proc,
             "audio_processor": aud_proc,
             "mode": "minimal",
-            "sample_mode": "single",
+            "sample_mode": "sequence" if args.temporal_agg else "single",
         }
 
     dm = get_datamodule(
         args.dataset,
         batch_size=args.batch_size,
         dataset_kwargs=ds_kwargs,
-        sample_mode="single",  # single, sequence
+        sample_mode="sequence" if args.temporal_agg else "single",
         clip_mode=args.clip_mode,  # 'id', 'idx'
         clip_to=args.clip_to,  # 'min', int
         clip_selector=args.clip_selector,  # 'first', 'random'
@@ -740,6 +830,24 @@ def main(args: argparse.Namespace):
     FUSION = args.fusion
     EMB_DIM = args.emb_dim
 
+    # Count unique identities for FRIDAY and PFAID modes (needed before pipe creation)
+    num_identities = 156  # default fallback
+    if args.iil_mode in ("friday", "pfaid"):
+        import h5py
+        train_h5_path = os.path.join(args.data_dir, "train.h5")
+        if os.path.exists(train_h5_path):
+            with h5py.File(train_h5_path, "r") as hf:
+                ids = {json.loads(hf[s].attrs["metadata"])["id_target"] for s in hf.keys()}
+            num_identities = len(ids)
+            print(f"[INFO] {args.iil_mode.upper()}: found {num_identities} unique identities in training set")
+        else:
+            print(f"[WARN] {args.iil_mode.upper()}: train.h5 not found at {train_h5_path}, using default num_identities={num_identities}")
+
+    # Per-modality projection dims (Task 3: asymmetric projection)
+    video_proj_dim = args.video_proj_dim if args.video_proj_dim is not None else args.proj_dim
+    audio_proj_dim = args.audio_proj_dim if args.audio_proj_dim is not None else args.proj_dim
+    per_modality_proj_dims = {"video": video_proj_dim, "audio": audio_proj_dim}
+
     fusion = get_fusion(
         fusion_name=FUSION,
         output_dim=EMB_DIM,
@@ -749,6 +857,7 @@ def main(args: argparse.Namespace):
             "audio": 192,  # ReDimNet output dim
         },
         out_proj_dim=args.proj_dim,
+        per_modality_proj_dims=per_modality_proj_dims,
         num_att_heads=2,  # only for attention-based fusions
         n_layers=2,  # only for MMD
         dropout=args.dropout,
@@ -768,7 +877,13 @@ def main(args: argparse.Namespace):
         fusion=fusion,
         detection_head=detection_head,
         freeze_backbone=True,
-        iil_mode = args.iil_mode,
+        iil_mode=args.iil_mode,
+        sis_k=args.sis_k,
+        sis_strength=args.sis_strength,
+        pfaid_num_ids=num_identities,
+        pfaid_beta=args.pfaid_beta,
+        modality_branches=args.modality_branches,
+        temporal_agg=get_temporal_aggregator(args.temporal_agg, EMB_DIM) if args.temporal_agg else None,
     )
 
     # PREPARE TRAINER
@@ -801,8 +916,11 @@ def main(args: argparse.Namespace):
         pipeline=pipe,
         detection_task=args.task,
         lr=args.lr,
-        iil_mode = args.iil_mode,
-        train_strategy = args.train_strategy,
+        iil_mode=args.iil_mode,
+        train_strategy=args.train_strategy,
+        num_identities=num_identities,
+        lambda_pfaid=args.pfaid_lambda,
+        modality_branches=args.modality_branches,
     )
     
     print(model)
@@ -858,6 +976,8 @@ def main(args: argparse.Namespace):
         Learning Rate: {args.lr:.2e}
         Dropout: {args.dropout}
         IIL Mode: {args.iil_mode}
+        SIS k: {args.sis_k}
+        SIS Strength: {args.sis_strength}
         Training Strategy: {args.train_strategy}
     
     [DATASET]
